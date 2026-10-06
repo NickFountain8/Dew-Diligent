@@ -1,0 +1,49 @@
+name: Update Contour Data
+
+# Runs daily and can also be started by hand from the Actions tab.
+# Free on GitHub: public repos get unlimited Actions minutes.
+on:
+  schedule:
+    - cron: '0 8 * * *'   # 8:00 UTC every day
+  workflow_dispatch: {}    # adds a "Run workflow" button
+
+permissions:
+  contents: write          # lets the job save the new data file into the repo
+
+jobs:
+  update-contours:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Install GDAL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gdal-bin
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install requests
+
+      - name: Run contour generation
+        run: |
+          mkdir -p data
+          # SMALL TEST AREA (about 2 km square near Gulfport, MS). Start small to prove the
+          # pipeline works; a whole county at 1-foot detail is far too large to test with.
+          python3 3dep_contours.py \
+            --bbox -89.10 30.37 -89.08 30.39 \
+            --interval-ft 1 \
+            --out data/test-area-contours.geojson
+
+      - name: Save updated data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git diff --staged --quiet || git commit -m "Daily contour data update $(date -u +%Y-%m-%d)"
+          git push
