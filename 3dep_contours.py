@@ -63,20 +63,37 @@ def find_1m_dem_tiles(bbox):
     params = {
         "bbox": f"{min_lon},{min_lat},{max_lon},{max_lat}",
         "datasets": "Digital Elevation Model (DEM) 1 meter",
-        "prodFormats": "GeoTIFF",
+        "max": 100,
+        "outputFormat": "JSON",
     }
-    resp = requests.get(TNM_ACCESS_API, params=params, timeout=30)
+    headers = {"User-Agent": "dew-diligent-contours/1.0"}
+    resp = requests.get(TNM_ACCESS_API, params=params, headers=headers, timeout=60)
+    print(f"  request: {resp.url}", file=sys.stderr)
     resp.raise_for_status()
     data = resp.json()
-    urls = [item["downloadURL"] for item in data.get("items", []) if item.get("downloadURL")]
-    if not urls:
+    items = data.get("items", [])
+    print(f"  USGS reported total={data.get('total')}, items returned={len(items)}", file=sys.stderr)
+
+    # Keep only the GeoTIFF files (filtering here instead of in the request, so a wrong
+    # format label can't silently exclude everything).
+    tif_items = [i for i in items if (i.get("downloadURL") or "").lower().endswith(".tif")]
+    if not tif_items:
         raise RuntimeError(
-            "No 1m 3DEP tiles found for this bbox via TNM Access API. "
-            "Coverage is nationwide per USGS's 2026 baseline-complete announcement, but tile "
-            "boundaries/project naming can make bbox queries miss edge cases — worth a manual "
-            "check at https://apps.nationalmap.gov/lidar-explorer/ if this happens."
+            "No 1m 3DEP GeoTIFF tiles found for this bbox. Raw USGS response (first 1500 "
+            "characters) so we can see what it actually said: " + json.dumps(data)[:1500]
         )
-    return urls
+
+    # Several survey projects can overlap the same spot. Use only the newest project so we
+    # don't mosaic different surveys together.
+    def project_of(url):
+        parts = url.split("/Projects/")
+        return parts[1].split("/")[0] if len(parts) > 1 else "unknown"
+
+    newest = max(tif_items, key=lambda i: i.get("publicationDate") or "")
+    project = project_of(newest["downloadURL"])
+    chosen = [i["downloadURL"] for i in tif_items if project_of(i["downloadURL"]) == project]
+    print(f"  using newest project '{project}' ({len(chosen)} tile(s))", file=sys.stderr)
+    return chosen
 
 
 def download_tile(url, dest_dir):
