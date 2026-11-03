@@ -1,0 +1,1910 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dew Diligent — Parcel Survey & Evaluation</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --paper:#EFE9DA;
+    --paper-dark:#E3DBC7;
+    --ink:#221F1A;
+    --contour:#8B5E3C;
+    --survey-green:#4B5D3A;
+    --amber:#C08A3E;
+    --danger:#8C3B2E;
+    --line:rgba(34,31,26,0.18);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--paper);color:var(--ink);font-family:'Source Serif 4', Georgia, serif;}
+  #app{display:flex;height:100vh;width:100vw;}
+
+  /* ---- Header strip ---- */
+  #header{
+    position:absolute; top:0; left:0; right:0; z-index:1000;
+    display:flex; align-items:baseline; justify-content:space-between;
+    padding:14px 22px; pointer-events:none;
+  }
+  #header .brand{
+    pointer-events:auto;
+    font-size:22px; font-weight:700; letter-spacing:0.2px;
+    color:var(--ink);
+    background:var(--paper);
+    padding:6px 14px;
+    border:1px solid var(--line);
+    box-shadow:2px 2px 0 var(--line);
+  }
+  #header .brand span{color:var(--contour); font-style:italic; font-weight:400;}
+  #header .hint{
+    pointer-events:auto;
+    font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--ink);
+    background:var(--paper); border:1px solid var(--line); padding:6px 12px;
+    max-width:260px; line-height:1.5;
+  }
+
+  /* ---- Map ---- */
+  #map{flex:1; height:100%; filter:saturate(0.92);}
+  .leaflet-control-attribution{font-family:'JetBrains Mono',monospace; font-size:9.5px;}
+
+  /* marker */
+  .parcel-pin{
+    width:16px; height:16px; border-radius:50%;
+    background:var(--danger); border:2px solid var(--paper);
+    box-shadow:0 0 0 1px var(--ink);
+  }
+
+  /* ---- Layer toggle panel ---- */
+  #layers{
+    position:absolute; left:20px; bottom:26px; z-index:1000;
+    background:var(--paper); border:1px solid var(--line);
+    box-shadow:3px 3px 0 var(--line);
+    padding:12px 16px; width:190px;
+    font-family:'JetBrains Mono',monospace; font-size:11.5px;
+  }
+  #layers .title{font-family:'Source Serif 4',serif; font-weight:700; font-size:13px; margin-bottom:8px; border-bottom:1px solid var(--line); padding-bottom:6px;}
+  #layers label{display:flex; align-items:center; gap:8px; margin:6px 0; cursor:pointer;}
+  #layers input{accent-color:var(--contour);}
+
+  /* ---- Measurement tools ---- */
+  #measure-bar{
+    position:absolute; right:20px; bottom:118px; z-index:1000; width:236px;
+    background:var(--paper); border:1px solid var(--line); box-shadow:3px 3px 0 var(--line);
+    padding:10px 12px; font-family:'JetBrains Mono',monospace; font-size:11.5px;
+  }
+  #measure-bar .m-title{font-family:'Source Serif 4',serif; font-weight:700; font-size:13px; margin-bottom:6px;}
+  #measure-bar .m-row{display:flex; flex-wrap:wrap; gap:5px;}
+  #measure-bar button{
+    font-family:'JetBrains Mono',monospace; font-size:11px; padding:5px 8px; cursor:pointer;
+    background:transparent; border:1px solid var(--ink); color:var(--ink);
+  }
+  #measure-bar button:hover{background:var(--paper-dark);}
+  #measure-bar button.on{background:var(--ink); color:var(--paper);}
+  #measure-bar .m-read{margin-top:8px; line-height:1.45; min-height:16px; color:var(--ink);}
+  #measure-bar .m-note{margin-top:6px; font-size:10px; color:#6b6656; line-height:1.35;}
+  #map.measuring, #map.measuring .leaflet-interactive{cursor:crosshair !important;}
+
+  /* ---- Report panel ---- */
+  #report{
+    width:380px; min-width:380px; height:100%;
+    background:var(--paper-dark);
+    border-left:2px solid var(--ink);
+    overflow-y:auto;
+    padding:0;
+    display:flex; flex-direction:column;
+  }
+  #report .rep-header{
+    padding:20px 22px 14px; border-bottom:1px solid var(--line);
+  }
+  #report .rep-header .label{
+    font-family:'JetBrains Mono',monospace; font-size:10.5px; letter-spacing:0.5px; color:var(--survey-green);
+  }
+  #report .rep-header h1{font-size:21px; margin:6px 0 2px; font-weight:700;}
+  #report .rep-header .coords{font-family:'JetBrains Mono',monospace; font-size:12px; color:#5b5648;}
+
+  .grade-block{
+    display:flex; align-items:center; gap:16px;
+    padding:20px 22px; border-bottom:1px solid var(--line);
+  }
+  .grade-letter{
+    font-size:52px; font-weight:700; line-height:1; font-family:'Source Serif 4',serif;
+    width:70px; height:70px; display:flex; align-items:center; justify-content:center;
+    border:2px solid var(--ink);
+  }
+  .grade-meta .score{font-family:'JetBrains Mono',monospace; font-size:13px;}
+  .grade-meta .summary{font-size:14px; margin-top:4px; line-height:1.4;}
+
+  .findings{padding:6px 22px 18px;}
+  .finding{
+    padding:12px 0; border-bottom:1px dashed var(--line);
+  }
+  .finding:last-child{border-bottom:none;}
+  .finding .f-head{display:flex; justify-content:space-between; align-items:baseline;}
+  .finding .f-name{font-weight:600; font-size:14.5px;}
+  .finding .f-val{font-family:'JetBrains Mono',monospace; font-size:13px;}
+  .finding .f-note{font-size:12.5px; color:#4a4638; margin-top:3px; line-height:1.4;}
+  .finding .f-note a{color:var(--contour); font-weight:600;}
+  .tag{
+    display:inline-block; font-family:'JetBrains Mono',monospace; font-size:9.5px;
+    padding:1px 6px; border:1px solid var(--line); margin-left:6px; letter-spacing:0.3px;
+  }
+  .tag.live{color:var(--survey-green); border-color:var(--survey-green);}
+  .tag.na{color:var(--danger); border-color:var(--danger);}
+
+  #report .empty{
+    padding:60px 26px; text-align:center; color:#5b5648;
+  }
+  #report .empty .big{font-size:15px; margin-bottom:8px;}
+  #report .empty .small{font-family:'JetBrains Mono',monospace; font-size:11.5px;}
+
+  .upgrade-panel{
+    margin:4px 22px 18px; padding:16px 18px;
+    background:var(--paper); border:1px solid var(--ink);
+    box-shadow:2px 2px 0 var(--line);
+  }
+  .upgrade-title{font-weight:700; font-size:15px; margin-bottom:8px;}
+  .upgrade-body{font-size:13px; line-height:1.5; margin-bottom:8px; color:#3a362c;}
+  .upgrade-body:last-child{margin-bottom:0;}
+
+  .report-tabs{display:flex; padding:0 22px; border-bottom:1px solid var(--line); background:var(--paper-dark);}
+  .tab-btn{font-family:'JetBrains Mono',monospace; font-size:12px; padding:10px 14px; border:none; background:transparent; cursor:pointer; color:#5b5648; border-bottom:3px solid transparent;}
+  .tab-btn.active{color:var(--ink); border-bottom-color:var(--ink); font-weight:600;}
+  .uses-body{padding:16px 22px 6px;}
+  .uses-title{font-weight:700; font-size:17px; margin-bottom:2px;}
+  .uses-sub{font-family:'JetBrains Mono',monospace; font-size:11px; color:#5b5648; margin-bottom:14px;}
+  .uses-block{margin-bottom:14px; padding-bottom:12px; border-bottom:1px dashed var(--line);}
+  .uses-block h3{margin:0 0 4px; font-size:14.5px;}
+  .uses-label{font-family:'JetBrains Mono',monospace; font-size:10.5px; letter-spacing:0.4px; color:var(--survey-green); margin-top:8px;}
+  .uses-block ul{margin:3px 0 6px 18px; padding:0; font-size:13px; line-height:1.45;}
+  .uses-meta{font-size:11.5px; color:#5b5648; line-height:1.4; margin-top:6px;}
+  .uses-empty{font-size:13px; line-height:1.5; color:#3a362c;}
+  .uses-block a{color:var(--contour); font-weight:600;}
+  .ro-form label{display:block; font-size:12.5px; font-weight:600; margin:10px 0 3px;}
+  .ro-form select, .ro-form input{width:100%; box-sizing:border-box; font-family:'Source Serif 4',serif; font-size:14px; padding:7px 9px; border:1px solid var(--line); background:#fff;}
+  .ro-form input:disabled{background:var(--paper-dark); color:#8a8576;}
+  .ro-big{font-size:44px; font-weight:700; line-height:1.05; margin:2px 0 6px;}
+  .upgrade-panel.has-flags{border-color:var(--danger); box-shadow:2px 2px 0 var(--danger);}
+  .upgrade-panel.has-flags .upgrade-title{color:var(--danger);}
+
+  .request-btn{
+    display:inline-block; margin-top:6px; padding:10px 16px;
+    background:var(--ink); color:var(--paper); border:none;
+    font-family:'JetBrains Mono',monospace; font-size:12.5px; letter-spacing:0.3px;
+    cursor:pointer;
+  }
+  .request-btn:hover{background:var(--contour);}
+
+  #modal-overlay{
+    display:none; position:fixed; inset:0; background:rgba(34,31,26,0.55); z-index:2000;
+    align-items:center; justify-content:center;
+  }
+  #modal-overlay.open{display:flex;}
+  #request-modal{
+    background:var(--paper); border:2px solid var(--ink); box-shadow:4px 4px 0 var(--line);
+    width:min(480px, 90vw); max-height:85vh; overflow-y:auto; padding:24px;
+  }
+  #request-modal h2{margin:0 0 6px; font-size:19px;}
+  #request-modal .modal-sub{font-family:'JetBrains Mono',monospace; font-size:11px; color:#5b5648; margin-bottom:16px;}
+  #request-modal label{display:block; font-size:12.5px; font-weight:600; margin:12px 0 4px;}
+  #request-modal input, #request-modal textarea{
+    width:100%; font-family:'Source Serif 4',serif; font-size:14px; padding:8px 10px;
+    border:1px solid var(--line); background:#fff; box-sizing:border-box;
+  }
+  #request-modal textarea{min-height:70px; resize:vertical;}
+  #request-modal .modal-actions{display:flex; gap:10px; margin-top:18px;}
+  #modal-cancel{background:transparent; border:1px solid var(--line); color:var(--ink); padding:10px 16px; font-family:'JetBrains Mono',monospace; font-size:12.5px; cursor:pointer;}
+  #modal-note{font-size:11px; color:#6b6656; margin-top:14px; line-height:1.4;}
+
+  #report .footnote{
+    margin-top:auto; padding:14px 22px; font-family:'JetBrains Mono',monospace;
+    font-size:10px; color:#6b6656; border-top:1px solid var(--line); line-height:1.5;
+  }
+
+  .spinner{
+    display:inline-block; width:11px; height:11px; border:2px solid var(--line);
+    border-top-color:var(--contour); border-radius:50%; animation:spin 0.8s linear infinite;
+    margin-right:6px; vertical-align:-1px;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="map">
+    <div id="header">
+      <div class="brand">Dew<span>Diligent</span></div>
+      <div class="hint"><strong>PROTOTYPE, for testing.</strong> Click the map to run a screening report. Results are estimates, not a survey, legal advice, or a wetland determination.</div>
+    </div>
+    <div id="measure-bar">
+      <div class="m-title">Measure</div>
+      <div class="m-row">
+        <button id="m-dist">Distance</button>
+        <button id="m-area">Area</button>
+        <button id="m-undo" style="display:none">Undo</button>
+        <button id="m-finish" style="display:none">Finish</button>
+        <button id="m-clear">Clear</button>
+      </div>
+      <div class="m-read" id="m-read"></div>
+      <div class="m-note">Approximate, drawn by hand on the map. Not a survey.</div>
+    </div>
+    <div id="layers">
+      <div class="title">Base map</div>
+      <label><input type="radio" name="basemap" id="base-street" checked> Street (close zoom)</label>
+      <label><input type="radio" name="basemap" id="base-aerial"> Aerial imagery (close zoom)</label>
+      <label><input type="radio" name="basemap" id="base-maris"> MARIS Aerial (MS high-res)</label>
+      <label><input type="radio" name="basemap" id="base-topo"> USGS Topo (zoom-limited)</label>
+      <div style="border-top:1px solid var(--line); margin:8px 0 4px; padding-top:8px;">Overlays</div>
+      <label><input type="checkbox" id="toggle-soils" checked> NRCS Soils (SSURGO)</label>
+      <label><input type="checkbox" id="toggle-wetlands" checked> NWI Wetlands (ref. only)</label>
+      <label><input type="checkbox" id="toggle-flood" checked> FEMA Flood Zones</label>
+      <label><input type="checkbox" id="toggle-bfe" checked> Base Flood Elevation lines</label>
+      <label><input type="checkbox" id="toggle-waterways" checked> Named Waterways (NHD)</label>
+      <label><input type="checkbox" id="toggle-flowlines" checked> Streams / blue lines (NHD)</label>
+      <label><input type="checkbox" id="toggle-contours"> USGS Contours (live, interval varies)</label>
+      <label><input type="checkbox" id="toggle-precontours"> 1-ft contours (3DEP, test area)</label>
+      <div id="precontours-status" style="font-size:10.5px; margin:-2px 0 4px 22px; color:#6b6656;"></div>
+      <label><input type="checkbox" id="toggle-livecontours"> Contours: live, any area (experimental)</label>
+      <div id="livecontours-status" style="font-size:10.5px; margin:-2px 0 4px 22px; color:#6b6656;"></div>
+      <div style="border-top:1px solid var(--line); margin:8px 0 4px; padding-top:8px; color:#6b6656;">MISSISSIPPI</div>
+      <label><input type="checkbox" id="toggle-parcels" checked> Parcels (MARIS)</label>
+      <label><input type="checkbox" id="toggle-buildings" checked> Building footprints (MARIS)</label>
+      <label><input type="checkbox" id="toggle-gptzoning"> Zoning: City of Gulfport</label>
+    </div>
+  </div>
+  <div id="report">
+    <div class="empty" id="empty-state">
+      <div class="big">No point selected</div>
+      <div class="small">// click the map to begin survey</div>
+    </div>
+  </div>
+</div>
+
+<div id="modal-overlay">
+  <div id="request-modal">
+    <h2>Request Detailed Professional Review</h2>
+    <div class="modal-sub" id="modal-property-line">No property selected</div>
+    <form id="request-form">
+      <label for="req-name">Name</label>
+      <input type="text" id="req-name" required>
+      <label for="req-email">Email</label>
+      <input type="email" id="req-email" required>
+      <label for="req-phone">Phone (optional)</label>
+      <input type="tel" id="req-phone">
+      <label for="req-message">What are you hoping to confirm?</label>
+      <textarea id="req-message" placeholder="e.g. wetland boundary, buildability, zoning use"></textarea>
+      <div class="modal-actions">
+        <button type="submit" class="request-btn">Submit Request</button>
+        <button type="button" id="modal-cancel">Cancel</button>
+      </div>
+      <div id="modal-note">This is a prototype — submitting opens an email to Dew Diligent with your property snapshot and message attached. A production version would route this to a real intake system (and payment, for the paid tier) instead.</div>
+    </form>
+  </div>
+</div>
+
+<script>
+const map = L.map('map', { zoomControl: false, maxZoom: 20 }).setView([39.5, -98.35], 5);
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+// Street base — OpenStreetMap, zooms in close enough for individual buildings/parcels
+const streetLayer = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 19, attribution: 'Esri World Street Map' }
+).addTo(map);
+
+// Aerial base — Esri World Imagery, also zooms in close (USGS's own imagery cache tops out ~16)
+const aerialLayer = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 19, attribution: 'Esri World Imagery' }
+);
+
+// USGS Topo — kept as an option, but it's cached and stops resolving detail past z16
+const topoLayer = L.tileLayer(
+  'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 16, attribution: 'USGS The National Map' }
+);
+
+// MARIS Aerial — Mississippi's own best-available imagery (leaf-off/leaf-on by region, 6-12")
+// Cached to ~1:8,000 scale per MARIS's own service description — good detail, but don't oversell
+// it as unlimited zoom; it's capped lower than the Esri/street options.
+const marisAerialLayer = L.tileLayer(
+  'https://gis.mississippi.edu/server/rest/services/BestAvailable/Best_Avail_Jan2025/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 17, attribution: 'MARIS Best Available Imagery (Surdex, USDA, MDEQ, MARIS)' }
+);
+
+const baseLayers = { street: streetLayer, aerial: aerialLayer, maris: marisAerialLayer, topo: topoLayer };
+function setBaseLayer(key){
+  Object.entries(baseLayers).forEach(([k, layer]) => {
+    if(k === key){ if(!map.hasLayer(layer)) layer.addTo(map); }
+    else { if(map.hasLayer(layer)) map.removeLayer(layer); }
+  });
+}
+document.getElementById('base-street').addEventListener('change', () => setBaseLayer('street'));
+document.getElementById('base-aerial').addEventListener('change', () => setBaseLayer('aerial'));
+document.getElementById('base-maris').addEventListener('change', () => setBaseLayer('maris'));
+document.getElementById('base-topo').addEventListener('change', () => setBaseLayer('topo'));
+
+// NRCS SSURGO soils — Soil Data Access WMS (real data, WGS84)
+const soilsLayer = L.tileLayer.wms(
+  'https://SDMDataAccess.sc.egov.usda.gov/Spatial/SDMWGS84Geographic.wms',
+  {
+    layers: 'MapunitPoly',
+    format: 'image/png',
+    transparent: true,
+    version: '1.1.1',
+    opacity: 0.55,
+    attribution: 'USDA NRCS Soil Data Access (SSURGO)'
+  }
+).addTo(map);
+
+// NWI Wetlands — FWS reference layer only, not a legal boundary
+const wetlandsLayer = L.tileLayer.wms(
+  'https://fwspublicservices.wim.usgs.gov/wetlandsmapservice/services/Wetlands/MapServer/WMSServer',
+  { layers: '0', format: 'image/png', transparent: true, version: '1.3.0', opacity: 0.5,
+    attribution: 'USFWS National Wetlands Inventory (reference only)' }
+).addTo(map);
+
+// FEMA National Flood Hazard Layer — Flood Hazard Zones (layer 28)
+const floodLayer = L.tileLayer.wms(
+  'https://hazards.fema.gov/arcgis/services/public/NFHL/MapServer/WMSServer',
+  { layers: '28', format: 'image/png', transparent: true, version: '1.3.0', opacity: 0.45,
+    attribution: 'FEMA National Flood Hazard Layer' }
+).addTo(map);
+
+// FEMA Base Flood Elevation lines (layer 16) — the actual BFE contours shown on the FIRM
+const bfeLayer = L.tileLayer.wms(
+  'https://hazards.fema.gov/arcgis/services/public/NFHL/MapServer/WMSServer',
+  { layers: '16', format: 'image/png', transparent: true, version: '1.3.0', opacity: 0.9,
+    attribution: 'FEMA National Flood Hazard Layer (BFE lines)' }
+).addTo(map);
+
+// USGS NHD — Waterbody (large scale), carries GNIS name + FType (incl. estuary/tidal codes)
+const waterwaysLayer = L.tileLayer.wms(
+  'https://hydro.nationalmap.gov/arcgis/services/nhd/MapServer/WMSServer',
+  { layers: '10', format: 'image/png', transparent: true, version: '1.3.0', opacity: 0.7,
+    attribution: 'USGS National Hydrography Dataset' }
+).addTo(map);
+
+// NHD Flowline — the actual "blue lines" (streams/rivers), separate from Waterbody polygons.
+// This is the layer that was missing before: a tributary can be a blue line with no polygon at all.
+const flowlinesLayer = L.tileLayer.wms(
+  'https://hydro.nationalmap.gov/arcgis/services/nhd/MapServer/WMSServer',
+  { layers: '6', format: 'image/png', transparent: true, version: '1.3.0', opacity: 0.8,
+    attribution: 'USGS National Hydrography Dataset (Flowline)' }
+).addTo(map);
+document.getElementById('toggle-flowlines').addEventListener('change', e => {
+  e.target.checked ? flowlinesLayer.addTo(map) : map.removeLayer(flowlinesLayer);
+});
+
+// USGS live national contours — a real fallback that doesn't depend on MARIS being up.
+// Interval is NOT fixed (varies by quad/terrain), unlike the precise 1'/2' product we actually
+// want — labeled honestly as "interval varies" so it's never mistaken for the precise data.
+const contoursLayer = L.tileLayer.wms(
+  'https://carto-wfs.nationalmap.gov/arcgis/services/contours/MapServer/WMSServer',
+  { layers: '0', format: 'image/png', transparent: true, version: '1.3.0', opacity: 0.8,
+    attribution: 'USGS Elevation Contours (The National Map)' }
+);
+document.getElementById('toggle-contours').addEventListener('change', e => {
+  e.target.checked ? contoursLayer.addTo(map) : map.removeLayer(contoursLayer);
+});
+
+// --- Precise computed contours (1-foot), derived from USGS 3DEP ---
+// Generated by the daily GitHub Actions job (3dep_contours.py) and published through GitHub
+// Pages as a GeoJSON file. The browser only DRAWS the finished lines here; the heavy computation
+// happens in that job. Right now the file covers a small TEST AREA near Gulfport, MS only.
+// IMPORTANT: lines are only as precise as the elevation data under them. Where USGS has no
+// 1-meter lidar it fills in with coarser data, and 1-foot lines from that would look precise
+// without being accurate. Verify the source before relying on them for a specific site.
+const PRECISE_CONTOURS_URL = 'https://nickfountain8.github.io/Dew-Diligent/data/test-area-contours.geojson';
+let preciseContoursLayer = null;
+
+async function loadPreciseContours(){
+  const status = document.getElementById('precontours-status');
+  status.textContent = 'Loading…';
+  try{
+    const res = await fetch(PRECISE_CONTOURS_URL);
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    preciseContoursLayer = L.geoJSON(data, {
+      style: { color: '#8B5E3C', weight: 1, opacity: 0.9 },
+      onEachFeature: (feature, layer) => {
+        const ft = feature.properties && feature.properties.elev_ft;
+        if(ft !== undefined) layer.bindTooltip(`${ft} ft`, { sticky: true });
+      },
+    });
+    status.textContent = `${data.features.length} lines (test area only)`;
+    status.style.color = 'var(--survey-green)';
+    return true;
+  }catch(err){
+    status.textContent = 'Could not load (' + err.message + ')';
+    status.style.color = 'var(--danger)';
+    return false;
+  }
+}
+
+document.getElementById('toggle-precontours').addEventListener('change', async (e) => {
+  if(!e.target.checked){
+    if(preciseContoursLayer) map.removeLayer(preciseContoursLayer);
+    return;
+  }
+  if(!preciseContoursLayer){
+    const ok = await loadPreciseContours();
+    if(!ok){ e.target.checked = false; return; }
+    preciseContoursLayer.addTo(map);
+    map.fitBounds(preciseContoursLayer.getBounds()); // jump to the test area the first time
+  } else {
+    preciseContoursLayer.addTo(map);
+  }
+});
+
+// --- LIVE contours for any zoomed-in area (experimental) ---
+// When switched on and zoomed in, this asks USGS's 3DEP elevation service for the elevation of just
+// the area on screen, then draws the contour lines in the browser. Works anywhere in the US with
+// nothing pre-built. Limits to know about:
+//  - Only draws at zoom 16 or closer (a wider view would be too much data).
+//  - Line spacing widens automatically at lower zooms (and in very steep terrain) to stay fast.
+//  - USGS uses 1-meter lidar where it exists and COARSER data (~10 m) where it doesn't. Lines
+//    from coarse data look precise but are not. This layer cannot tell which it is getting.
+const LIVE_MIN_ZOOM = 16;
+const LIVE_MAX_THRESHOLDS = 120;
+const LIVE_MAX_PIXELS = 800;
+const FT_IN_M = 0.3048;
+const ELEVATION_EXPORT_URL = 'https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage';
+let liveContoursLayer = null;
+let liveContoursOn = false;
+let liveContoursTimer = null;
+let liveRequestId = 0;
+
+// <LIVE-HELPERS>
+function liveBaseIntervalFt(zoom){ return zoom >= 18 ? 1 : (zoom === 17 ? 2 : 5); }
+
+function liveGridSize(west, south, east, north, maxPx){
+  const midLat = (south + north) / 2;
+  const widthM = (east - west) * 111320 * Math.cos(midLat * Math.PI / 180);
+  const heightM = (north - south) * 110574;
+  const cell = Math.max(1, Math.max(widthM, heightM) / maxPx); // never finer than 1 m
+  return { w: Math.max(2, Math.round(widthM / cell)), h: Math.max(2, Math.round(heightM / cell)), cellM: cell };
+}
+
+// Pick contour levels (in meters) every `intervalFt` feet, widening the spacing if there'd be too many.
+function liveThresholds(minM, maxM, intervalFt, cap){
+  let stepFt = intervalFt;
+  for(let guard = 0; guard < 12; guard++){
+    const step = stepFt * FT_IN_M;
+    const first = Math.floor(minM / step), last = Math.ceil(maxM / step);
+    if(last - first + 1 <= cap){
+      const levels = [];
+      for(let i = first; i <= last; i++) levels.push({ valueM: i * step, index: i % 5 === 0 });
+      return { levels, stepFt };
+    }
+    stepFt *= 2;
+  }
+  return { levels: [], stepFt };
+}
+
+// Turn grid positions (x across, y down) into longitude/latitude for the area that was requested.
+function liveToLonLat(x, y, w, h, west, south, east, north){
+  return [west + (x / w) * (east - west), north - (y / h) * (north - south)];
+}
+// </LIVE-HELPERS>
+
+async function refreshLiveContours(){
+  const status = document.getElementById('livecontours-status');
+  if(!liveContoursOn) return;
+  const clearLayer = () => { if(liveContoursLayer){ map.removeLayer(liveContoursLayer); liveContoursLayer = null; } };
+  const zoom = map.getZoom();
+  status.style.color = '#6b6656';
+  if(zoom < LIVE_MIN_ZOOM){
+    clearLayer();
+    status.textContent = `Zoom in to level ${LIVE_MIN_ZOOM} or closer to see contours (now ${zoom}).`;
+    return;
+  }
+  if(typeof d3 === 'undefined' || typeof GeoTIFF === 'undefined'){
+    status.textContent = 'Contour libraries failed to load (check your internet connection).';
+    status.style.color = 'var(--danger)';
+    return;
+  }
+  const myId = ++liveRequestId;
+  const b = map.getBounds().pad(0.25); // extra margin so edge artifacts fall off-screen
+  const west = b.getWest(), south = b.getSouth(), east = b.getEast(), north = b.getNorth();
+  const { w, h } = liveGridSize(west, south, east, north, LIVE_MAX_PIXELS);
+  const url = `${ELEVATION_EXPORT_URL}?bbox=${west},${south},${east},${north}&bboxSR=4326&imageSR=4326&size=${w},${h}&format=tiff&pixelType=F32&noData=-9999&interpolation=RSP_BilinearInterpolation&f=image`;
+  status.textContent = 'Loading elevation…';
+  try{
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const buf = await res.arrayBuffer();
+    const hd = new Uint8Array(buf, 0, 4);
+    const isTiff = (hd[0] === 0x49 && hd[1] === 0x49 && hd[2] === 0x2A && hd[3] === 0) || (hd[0] === 0x4D && hd[1] === 0x4D && hd[2] === 0 && hd[3] === 0x2A);
+    if(!isTiff) throw new Error('USGS did not return an elevation file');
+    const tiff = await GeoTIFF.fromArrayBuffer(buf);
+    const image = await tiff.getImage();
+    const rw = image.getWidth(), rh = image.getHeight();
+    const raw = (await image.readRasters())[0];
+    if(myId !== liveRequestId) return; // the map moved again; a newer request will draw instead
+
+    let min = Infinity, max = -Infinity;
+    for(let i = 0; i < raw.length; i++){ const v = raw[i]; if(v > -9000){ if(v < min) min = v; if(v > max) max = v; } }
+    if(!isFinite(min)) throw new Error('no elevation data for this area');
+    const values = new Float64Array(raw.length);
+    for(let i = 0; i < raw.length; i++) values[i] = raw[i] > -9000 ? raw[i] : min; // fill gaps with the lowest valid value
+
+    const { levels, stepFt } = liveThresholds(min, max, liveBaseIntervalFt(zoom), LIVE_MAX_THRESHOLDS);
+    if(!levels.length) throw new Error('terrain too steep to draw at this zoom');
+    const contours = d3.contours().size([rw, rh]).thresholds(levels.map(l => l.valueM))(values);
+    const features = contours.map((c, i) => ({
+      type: 'Feature',
+      properties: { elev_ft: Math.round(c.value / FT_IN_M * 10) / 10, index: levels[i].index },
+      geometry: { type: 'MultiPolygon', coordinates: c.coordinates.map(poly => poly.map(ring => ring.map(([x, y]) => liveToLonLat(x, y, rw, rh, west, south, east, north)))) },
+    }));
+    const layer = L.geoJSON({ type: 'FeatureCollection', features }, {
+      interactive: false,
+      style: f => ({ color: '#8B5E3C', weight: f.properties.index ? 1.6 : 0.7, opacity: 0.85, fill: false }),
+    });
+    clearLayer();
+    liveContoursLayer = layer.addTo(map);
+    status.textContent = `Lines every ${stepFt} ft (heavier line every ${stepFt * 5} ft). Source detail not verified.`;
+  }catch(err){
+    clearLayer();
+    status.textContent = 'Could not load: ' + err.message;
+    status.style.color = 'var(--danger)';
+  }
+}
+
+document.getElementById('toggle-livecontours').addEventListener('change', (e) => {
+  liveContoursOn = e.target.checked;
+  const status = document.getElementById('livecontours-status');
+  if(!liveContoursOn){
+    liveRequestId++;
+    if(liveContoursLayer){ map.removeLayer(liveContoursLayer); liveContoursLayer = null; }
+    status.textContent = '';
+    return;
+  }
+  refreshLiveContours();
+});
+map.on('moveend', () => {
+  if(!liveContoursOn) return;
+  clearTimeout(liveContoursTimer);
+  liveContoursTimer = setTimeout(refreshLiveContours, 600); // wait for the map to settle
+});
+
+// --- Mississippi statewide parcels (MARIS / MDEQ Cadastral Framework) ---
+// Real, live, statewide — but MARIS's own license text says this is NOT legal/authoritative
+// data; treat it the same way we treat NWI: reference layer, county assessor is the source of truth.
+const parcelsLayer = L.tileLayer.wms(
+  'https://gis.mississippi.edu/server/services/Cadastral/MS_Parcels_Aprl2024/MapServer/WMSServer',
+  { layers: '0', format: 'image/png', transparent: true, version: '1.3.0', opacity: 0.9,
+    attribution: 'MARIS / MDEQ Cadastral Framework (MS Parcels, reference only)' }
+).addTo(map);
+
+document.getElementById('toggle-parcels').addEventListener('change', e => {
+  e.target.checked ? parcelsLayer.addTo(map) : map.removeLayer(parcelsLayer);
+});
+
+// MARIS / Microsoft building footprints — computer-vision-derived from satellite imagery,
+// so treat as approximate, not surveyed structure locations.
+const buildingsLayer = L.tileLayer.wms(
+  'https://gis.mississippi.edu/server/services/Cadastral/MS_BuildingFootprints_2022/MapServer/WMSServer',
+  { layers: '0', format: 'image/png', transparent: true, version: '1.3.0', opacity: 0.85,
+    attribution: 'MARIS / Microsoft Building Footprints (computer-generated, approximate)' }
+).addTo(map);
+document.getElementById('toggle-buildings').addEventListener('change', e => {
+  e.target.checked ? buildingsLayer.addTo(map) : map.removeLayer(buildingsLayer);
+});
+
+// --- Regrid (nationwide commercial parcel data — same provider category as LandGlide/OnX) ---
+// This is the "real" parcel source once a token is added: fill in REGRID_API_TOKEN below after
+// signing up for a self-serve plan at https://app.regrid.com (they offer a trial before billing).
+// Confirmed endpoint format per Regrid's own API docs — GET /api/v2/parcels/point.
+// PREFERRED: the address of your private relay (see regrid-proxy.mjs). The relay holds the
+// Regrid key, so the key never appears in this public page.
+const REGRID_PROXY_URL = ''; // e.g. 'https://dew-regrid.yourname.workers.dev' — blank means "use MARIS instead"
+// FOR PRIVATE TESTING ONLY: a key pasted here is visible to anyone who views the page source.
+const REGRID_API_TOKEN = '';
+
+async function queryParcelRegrid(lat, lon){
+  const url = REGRID_PROXY_URL
+    ? `${REGRID_PROXY_URL}?lat=${lat}&lon=${lon}`
+    : `https://app.regrid.com/api/v2/parcels/point?lat=${lat}&lon=${lon}&radius=1&token=${REGRID_API_TOKEN}`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('Regrid query failed: ' + res.status);
+  const data = await res.json();
+  if(!data.parcels || !data.parcels.features || data.parcels.features.length === 0){
+    // v2 wraps results under `parcels.features`; fall back to a bare `features` array in case
+    // of a schema/version difference we haven't confirmed against a live account yet.
+    if(!data.features || data.features.length === 0) return null;
+  }
+  const f = (data.parcels && data.parcels.features && data.parcels.features[0]) || data.features[0];
+  const p = f.properties.fields || f.properties;
+  const pick = (...keys) => keys.map(k => p[k]).find(v => v !== undefined && v !== null && v !== '');
+  return {
+    parcelId: pick('parcelnumb', 'parcelnumb_no_formatting'),
+    owner: pick('owner', 'owner1'),
+    county: pick('county'),
+    acres: pick('gisacre', 'll_gisacre'),
+    source: 'regrid',
+    raw: p,
+  };
+}
+
+async function queryParcel(lat, lon){
+  if(REGRID_PROXY_URL || REGRID_API_TOKEN){
+    try{
+      const regridResult = await queryParcelRegrid(lat, lon);
+      return regridResult;
+    }catch(err){
+      // Fall through to MARIS below rather than failing the whole parcel lookup.
+    }
+  }
+  const url = `https://gis.mississippi.edu/server/rest/services/Cadastral/MS_Parcels_Aprl2024/MapServer/0/query?geometry=${lon},${lat}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=false&f=json`;
+  const data = await arcgisQuery(url);
+  if(data.error) throw new Error(data.error.message || 'MARIS service error');
+  if(!data.features || data.features.length === 0) return null;
+  const a = data.features[0].attributes;
+  // Field names are best-effort — MARIS's schema wasn't fully confirmed, so we probe a few
+  // likely aliases rather than assuming one and breaking silently if it's wrong.
+  const pick = (...keys) => keys.map(k => a[k]).find(v => v !== undefined && v !== null && v !== '');
+  return {
+    parcelId: pick('PARCELID', 'PARCEL_ID', 'ParcelID', 'PIN', 'MAP_PARCEL'),
+    owner: pick('OWNER', 'OWNER_NAME', 'OwnerName'),
+    county: pick('COUNTY', 'CountyName', 'CNTYNAME'),
+    acres: pick('ACRES', 'GIS_ACRES', 'CALC_ACRES'),
+    source: 'maris',
+    raw: a,
+  };
+}
+
+// --- ZONING (city by city) ---
+// Zoning is set by each city, not the county, so every city is its own entry here. Gulfport is the
+// first one wired up, using the city's own published zoning map service. The service gives the
+// zoning DISTRICT (code + official district name), not the list of allowed uses: those live in the
+// city's ordinance and are left for the paid review. To add Biloxi, D'Iberville, etc., find that
+// city's zoning map service and add another entry below.
+// <ZONING-LOGIC>
+const ZONING_SOURCES = [
+  {
+    id: 'gulfport',
+    name: 'City of Gulfport',
+    baseUrl: 'https://maps.gulfport-ms.gov/arcgis/rest/services/CityServices/GPT_Zoning/MapServer',
+    exportLayers: 'show:7',
+    // Rough lon/lat box of the service's coverage. Note it also takes in parts of neighboring
+    // cities, so a point inside the box with no match may simply be outside Gulfport's limits.
+    bounds: [-89.3430379300154, 30.2042918738517, -88.8052261760195, 30.6777503679181],
+    extraFields: [['STRental', 'Short-term rental'], ['Note', 'City note'], ['ORD_NUM', 'Ordinance'], ['DATE_APRVD', 'Approved']],
+    layers: [
+      { id: 7, name: 'Traditional Code', codeField: 'ZONE_NAME', labels: {
+        'A-1': 'Agricultural District', 'B-1': 'Neighborhood Business District', 'B-2': 'General Business District',
+        'B-3': 'Central Business District', 'B-4': 'Highway Business District', 'E-G': 'Entertainment - Gaming District',
+        'I-1': 'Light Industry District', 'I-2': 'Heavy Industry District', 'I-3': 'Planned Industrial District',
+        'R-1-10': 'Single Family Residence (Low Density)', 'R-1-15': 'Single Family Residence District (Low Density)',
+        'R-1-5': 'Single Family Residence District (Medium Density)', 'R-1-7.5': 'Single Family Residence District (Low Density)',
+        'R-2': 'Single Family Residence District (Medium Density)', 'R-3': 'General Residence (High Density)',
+        'R-4': 'General Residence (High Density)', 'R-O': 'Residence-Office', 'R-B': 'Residence-Business District',
+        'R-E': 'Residence-Estate', 'R-UE': 'Residential Urban Estate', 'SB': 'Sand Beach', 'WF': 'Water Front' } },
+    ],
+  },
+];
+
+function escapeHtml(v){
+  return String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function queryZoning(lat, lon){
+  const active = ZONING_SOURCES.filter(src => lon >= src.bounds[0] && lat >= src.bounds[1] && lon <= src.bounds[2] && lat <= src.bounds[3]);
+  if(!active.length) return { covered: false, hits: [] };
+  const hits = [];
+  let failures = 0;
+  for(const src of active){
+    const results = await Promise.allSettled(src.layers.map(async layer => {
+      const url = `${src.baseUrl}/${layer.id}/query?geometry=${lon},${lat}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=false&f=json`;
+      const data = await arcgisQuery(url);
+      if(data.error) throw new Error(data.error.message || 'zoning service error');
+      return (data.features || []).map(f => f.attributes);
+    }));
+    results.forEach((r, i) => {
+      const layer = src.layers[i];
+      if(r.status !== 'fulfilled'){ failures++; return; }
+      r.value.forEach(attrs => {
+        const code = attrs[layer.codeField];
+        if(code === undefined || code === null || String(code).trim() === '') return;
+        const extras = src.extraFields
+          .map(([field, label]) => [label, attrs[field]])
+          .filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== '');
+        hits.push({ sourceId: src.id, source: src.name, layerName: layer.name, code: String(code).trim(), label: layer.labels[String(code).trim()] || null, extras });
+      });
+    });
+  }
+  if(!hits.length && failures > 0) throw new Error('The city zoning service did not respond.');
+  return { covered: true, hits, failures };
+}
+
+// Turn a zoning result into the three pieces the report row needs.
+function describeZoning(zoning){
+  if(!zoning.ok){
+    return { val: '—', tag: '<span class="tag na">UNAVAILABLE</span>', note: escapeHtml(zoning.error) + ' Check the city\'s zoning map directly.' };
+  }
+  const z = zoning.value;
+  if(!z.covered){
+    return { val: '—', tag: '<span class="tag na">NOT COVERED YET</span>',
+      note: 'Zoning is only available for one city so far, and this point is outside its area. Zoning here (another city, or unincorporated county land, which is often unzoned) needs a manual check or the paid review.' };
+  }
+  if(!z.hits.length){
+    return { val: 'None found', tag: '<span class="tag na">CHECK LOCALLY</span>',
+      note: 'No zoning district found at this point in the city map. It is probably outside that city\'s limits (another city, or unincorporated county). Confirm with the local planning office.' };
+  }
+  const val = [...new Set(z.hits.map(h => h.code))].map(escapeHtml).join(' / ');
+  const lines = z.hits.map(h => {
+    const extra = h.extras.map(([label, v]) => `${escapeHtml(label)}: ${escapeHtml(v)}`).join('; ');
+    return `<strong>${escapeHtml(h.code)}</strong> — ${h.label ? escapeHtml(h.label) : 'district name not listed'} <em>(${escapeHtml(h.layerName)}, ${escapeHtml(h.source)})</em>${extra ? '<br>' + extra : ''}`;
+  });
+  return { val, tag: '<span class="tag live">LIVE — CITY GIS</span>',
+    note: lines.join('<br>') + '<br><em>Allowed uses, setbacks, and conditions are set by the city\'s ordinance and are not in this map data. That is part of the paid review. Confirm the district with the city before relying on it.</em>' };
+}
+// </ZONING-LOGIC>
+
+// Zoning map overlay: draws the city's zoning map on ours by requesting pictures of the map
+// from the city's server one square at a time.
+const ZoningTileLayer = L.TileLayer.extend({
+  initialize: function(src, options){ this._src = src; L.TileLayer.prototype.initialize.call(this, '', options); },
+  getTileUrl: function(coords){
+    const b = this._tileCoordsToBounds(coords);
+    const sw = L.CRS.EPSG3857.project(b.getSouthWest());
+    const ne = L.CRS.EPSG3857.project(b.getNorthEast());
+    return `${this._src.baseUrl}/export?bbox=${sw.x},${sw.y},${ne.x},${ne.y}&bboxSR=3857&imageSR=3857&size=256,256&dpi=96&format=png32&transparent=true&layers=${this._src.exportLayers}&f=image`;
+  },
+});
+const gulfportZoningLayer = new ZoningTileLayer(ZONING_SOURCES[0], { minZoom: 12, maxZoom: 20, opacity: 0.6, attribution: 'City of Gulfport zoning map' });
+document.getElementById('toggle-gptzoning').addEventListener('change', e => {
+  e.target.checked ? gulfportZoningLayer.addTo(map) : map.removeLayer(gulfportZoningLayer);
+});
+
+// --- ALLOWED USES TAB ---
+// Shows what a parcel's zoning permits, but ONLY from two trustworthy sources, never guessed:
+//   1) Standardized zoning fields from a data provider (Regrid's Standardized Zoning product),
+//      when the parcel lookup returns them.
+//   2) Entries below that a person has checked against the city's ordinance. This table is EMPTY
+//      ON PURPOSE. An entry only counts if it names who checked it, when, and links the ordinance;
+//      anything missing those is treated as "not loaded". Shape:
+//        'city-id': { 'R-2': { asOfRight: ['...'], conditional: ['...'], notes: '...',
+//                              reviewedBy: 'Name', reviewedDate: '2026-01-31', sourceUrl: 'https://...' } }
+// <USES-LOGIC>
+const ALLOWED_USES_TABLE = {};
+
+// Regrid stores permitted uses as a JSON object: keys are land-use classes, values are lists of
+// sub-uses. Accept that, a JSON string of it, a plain list, or plain text.
+function parseUses(value){
+  if(value === undefined || value === null || value === '') return [];
+  let v = value;
+  if(typeof v === 'string'){
+    try{ v = JSON.parse(v); }catch(e){ return [{ name: v, subs: [] }]; }
+  }
+  if(Array.isArray(v)) return v.map(x => ({ name: String(x), subs: [] }));
+  if(v && typeof v === 'object'){
+    return Object.entries(v).map(([k, arr]) => ({ name: k, subs: Array.isArray(arr) ? arr.map(String) : (arr ? [String(arr)] : []) }));
+  }
+  return [{ name: String(v), subs: [] }];
+}
+
+function safeHttpUrl(u){
+  try{
+    const x = new URL(String(u));
+    return (x.protocol === 'http:' || x.protocol === 'https:') ? x.href : null;
+  }catch(e){ return null; }
+}
+
+function usesListHtml(items){
+  return '<ul>' + items.map(i => `<li>${escapeHtml(i.name)}${i.subs.length ? ': ' + i.subs.map(escapeHtml).join(', ') : ''}</li>`).join('') + '</ul>';
+}
+
+function buildAllowedUsesHtml(zoning, parcel){
+  const blocks = [];
+  const raw = (parcel && parcel.ok && parcel.value && parcel.value.source === 'regrid') ? parcel.value.raw : null;
+
+  // Source 1: standardized zoning fields from the parcel provider
+  if(raw && (raw.permitted_land_uses_as_of_right || raw.permitted_land_uses_conditional)){
+    const right = parseUses(raw.permitted_land_uses_as_of_right);
+    const cond = parseUses(raw.permitted_land_uses_conditional);
+    const link = raw.zoning_code_link ? safeHttpUrl(raw.zoning_code_link) : null;
+    blocks.push(`<div class="uses-block">
+      <h3>${escapeHtml(raw.zoning || 'Zoning district')}${raw.zoning_description ? ' — ' + escapeHtml(raw.zoning_description) : ''}</h3>
+      ${raw.zoning_type ? `<div class="uses-meta">Type: ${escapeHtml(raw.zoning_type)}${raw.zoning_subtype ? ' / ' + escapeHtml(raw.zoning_subtype) : ''}</div>` : ''}
+      <div class="uses-label">ALLOWED BY RIGHT</div>${right.length ? usesListHtml(right) : '<div class="uses-meta">None listed.</div>'}
+      <div class="uses-label">ALLOWED WITH A CONDITIONAL PERMIT</div>${cond.length ? usesListHtml(cond) : '<div class="uses-meta">None listed.</div>'}
+      <div class="uses-meta">Source: Regrid Standardized Zoning${raw.zoning_data_date ? ', data as of ' + escapeHtml(raw.zoning_data_date) : ''}.${link ? ` <a href="${escapeHtml(link)}" target="_blank" rel="noopener">Full zoning ordinance</a>` : ''}</div>
+    </div>`);
+  } else {
+    // Source 2: hand-checked entries, one block per zoning district found at this point
+    const hits = (zoning && zoning.ok && zoning.value && zoning.value.hits) ? zoning.value.hits : [];
+    const seen = new Set();
+    hits.forEach(h => {
+      const key = h.sourceId + '|' + h.code;
+      if(seen.has(key)) return;
+      seen.add(key);
+      const entry = (ALLOWED_USES_TABLE[h.sourceId] || {})[h.code];
+      const sourced = entry && entry.reviewedBy && entry.reviewedDate && safeHttpUrl(entry.sourceUrl);
+      if(sourced){
+        const asOfRight = (entry.asOfRight || []).map(n => ({ name: n, subs: [] }));
+        const conditional = (entry.conditional || []).map(n => ({ name: n, subs: [] }));
+        blocks.push(`<div class="uses-block">
+          <h3>${escapeHtml(h.code)}${h.label ? ' — ' + escapeHtml(h.label) : ''}</h3>
+          <div class="uses-label">ALLOWED BY RIGHT</div>${asOfRight.length ? usesListHtml(asOfRight) : '<div class="uses-meta">None listed.</div>'}
+          <div class="uses-label">ALLOWED WITH A CONDITIONAL PERMIT</div>${conditional.length ? usesListHtml(conditional) : '<div class="uses-meta">None listed.</div>'}
+          ${entry.notes ? `<div class="uses-meta">${escapeHtml(entry.notes)}</div>` : ''}
+          <div class="uses-meta">Checked against the ordinance by ${escapeHtml(entry.reviewedBy)} on ${escapeHtml(entry.reviewedDate)}. <a href="${escapeHtml(safeHttpUrl(entry.sourceUrl))}" target="_blank" rel="noopener">Ordinance</a></div>
+        </div>`);
+      } else {
+        blocks.push(`<div class="uses-block">
+          <h3>${escapeHtml(h.code)}${h.label ? ' — ' + escapeHtml(h.label) : ''}</h3>
+          <div class="uses-empty">The allowed uses for this district have not been loaded yet. They are set by the city's ordinance, and this app does not guess at them. A professional review will confirm them for this parcel.</div>
+        </div>`);
+      }
+    });
+  }
+
+  if(!blocks.length){
+    blocks.push(`<div class="uses-block"><div class="uses-empty">No zoning district was identified for this parcel, so there is no allowed-use information to show. The parcel may be outside any mapped city zoning (for example unincorporated county land), or the zoning source is not connected for this area yet.</div></div>`);
+  }
+
+  return `<div class="uses-body">
+    <div class="uses-title">Allowed Uses</div>
+    <div class="uses-sub">What this parcel's zoning permits</div>
+    ${blocks.join('')}
+    <div class="uses-block"><div class="uses-meta">General information only, not legal advice. The city's current ordinance controls, and rules can change. Overlay districts, deed restrictions, and flood or wetland limits can restrict a use even where zoning allows it.</div></div>
+  </div>
+  <div class="upgrade-panel">
+    <div class="upgrade-title">Need this confirmed for a purchase?</div>
+    <div class="upgrade-body">A professional review checks the district's allowed uses, setbacks, and any overlays against the current ordinance for this exact parcel.</div>
+    <button class="request-btn" onclick="openRequestModal(usesReviewPrefill())">Request an allowed-use review →</button>
+  </div>`;
+}
+// </USES-LOGIC>
+
+function usesReviewPrefill(){
+  const z = lastReportContext && lastReportContext.zoning && lastReportContext.zoning.length ? lastReportContext.zoning.join(', ') : 'not identified';
+  return `Please confirm the allowed uses for this parcel. Zoning district(s) shown in the app: ${z}.`;
+}
+
+function showReportTab(which){
+  ['eval', 'uses', 'runoff'].forEach(name => {
+    const panel = document.getElementById('tab-' + name);
+    const btn = document.getElementById('tabbtn-' + name);
+    if(panel) panel.style.display = (name === which) ? '' : 'none';
+    if(btn) btn.classList.toggle('active', name === which);
+  });
+}
+
+// --- RUNOFF COEFFICIENT (Rational Method C) ---
+// C is the share of rainfall that runs off at the peak of a design storm (0 = all soaks in, 1 = all
+// runs off). It comes from published tables, not a formula. These values are from the Greenville
+// County, SC Stormwater Management Design Manual (Jan 2018), Tables 5-1, 5-2 and 5-3, which list C
+// for 5- to 10-year storms by land cover, slope, and hydrologic soil group. That is one South
+// Carolina county's table; Mississippi and local jurisdictions publish their own, so confirm which
+// one governs a real project. Screening estimate only, not a stormwater design.
+// <RUNOFF-LOGIC>
+// Rural covers: values for soil groups [A, B, C, D]
+const RO_RURAL = {
+  woodland:   { label: 'Woodland / forest',         flat: [0.10, 0.10, 0.30, 0.40], rolling: [0.25, 0.25, 0.35, 0.50], hilly: [0.30, 0.30, 0.50, 0.60] },
+  pasture:    { label: 'Pasture / open grass',      flat: [0.10, 0.10, 0.30, 0.40], rolling: [0.16, 0.16, 0.36, 0.55], hilly: [0.22, 0.22, 0.42, 0.60] },
+  cultivated: { label: 'Cultivated / bare soil',    flat: [0.30, 0.30, 0.50, 0.60], rolling: [0.40, 0.40, 0.60, 0.70], hilly: [0.52, 0.52, 0.72, 0.82] },
+};
+// Lawns and graded ground are listed by soil texture, and slope under 2%, 2-7%, over 7%
+const RO_LAWN = { sandy: [0.10, 0.15, 0.20], clay: [0.17, 0.22, 0.35] };
+const RO_GRADED = { sandy: [0.30, 0.40], clay: [0.50, 0.60] }; // table stops at 7% slope
+const RO_FIXED = {
+  pavement: ['Pavement (asphalt, concrete)', 0.95], roofs: ['Roofs, driveways, walks', 0.95], gravel: ['Gravel areas', 0.50],
+  res_single: ['Residential: single-family', 0.50], res_suburban: ['Residential: suburban', 0.40],
+  res_multi_detached: ['Residential: multi-unit, detached', 0.60], res_multi_attached: ['Residential: multi-unit, attached', 0.70],
+  apartments: ['Apartment areas', 0.70], biz_neighborhood: ['Business: neighborhood', 0.70], biz_downtown: ['Business: downtown', 0.95],
+  ind_light: ['Industrial: light', 0.70], ind_heavy: ['Industrial: heavy', 0.80],
+  park: ['Parks, cemeteries, golf courses', 0.25], playground: ['Playgrounds', 0.35],
+};
+const RO_PERVIOUS = ['woodland', 'pasture', 'cultivated', 'lawn', 'graded'];
+const RO_IMPERVIOUS_C = 0.95;
+const RO_COVER_LIST = [
+  ['woodland', 'Woodland / forest', 'Natural and open land'], ['pasture', 'Pasture / open grass', 'Natural and open land'],
+  ['cultivated', 'Cultivated / bare soil', 'Natural and open land'], ['lawn', 'Lawn / landscaped', 'Natural and open land'],
+  ['graded', 'Graded, no plant cover', 'Natural and open land'],
+  ['res_suburban', 'Residential: suburban', 'Developed land (typical totals)'], ['res_single', 'Residential: single-family', 'Developed land (typical totals)'],
+  ['res_multi_detached', 'Residential: multi-unit, detached', 'Developed land (typical totals)'], ['res_multi_attached', 'Residential: multi-unit, attached', 'Developed land (typical totals)'],
+  ['apartments', 'Apartment areas', 'Developed land (typical totals)'], ['biz_neighborhood', 'Business: neighborhood', 'Developed land (typical totals)'],
+  ['biz_downtown', 'Business: downtown', 'Developed land (typical totals)'], ['ind_light', 'Industrial: light', 'Developed land (typical totals)'],
+  ['ind_heavy', 'Industrial: heavy', 'Developed land (typical totals)'], ['park', 'Parks, cemeteries, golf courses', 'Developed land (typical totals)'],
+  ['playground', 'Playgrounds', 'Developed land (typical totals)'],
+  ['pavement', 'Pavement (asphalt, concrete)', 'Hard surfaces'], ['roofs', 'Roofs, driveways, walks', 'Hard surfaces'], ['gravel', 'Gravel areas', 'Hard surfaces'],
+];
+
+function runoffC({ cover, slopePct, hsg, impPct = 0 }){
+  const fail = (error) => ({ ok: false, error });
+  if(!cover) return fail('Choose a land cover to see the runoff coefficient.');
+  const needsSlopeSoil = (cover in RO_RURAL) || cover === 'lawn' || cover === 'graded';
+  const slope = (slopePct === null || slopePct === undefined || slopePct === '') ? NaN : Number(slopePct);
+  if(needsSlopeSoil){
+    if(!isFinite(slope) || slope < 0) return fail('Enter the slope (%) for this land cover.');
+    if(!['A', 'B', 'C', 'D'].includes(hsg)) return fail('This land cover needs a hydrologic soil group (A, B, C, or D). Pick one below.');
+  }
+  const hi = ['A', 'B', 'C', 'D'].indexOf(hsg);
+  let base, basis;
+  if(cover in RO_RURAL){
+    const t = RO_RURAL[cover];
+    let row, cls;
+    if(slope <= 5){ row = t.flat; cls = 'flat (0-5%)'; }
+    else if(slope <= 10){ row = t.rolling; cls = 'rolling (5-10%)'; }
+    else if(slope <= 30){ row = t.hilly; cls = 'hilly (10-30%)'; }
+    else return fail('The source table stops at 30% slope, so there is no value for steeper ground.');
+    base = row[hi]; basis = `${t.label}, ${cls}, soil group ${hsg}`;
+  } else if(cover === 'lawn'){
+    const tex = (hsg === 'A' || hsg === 'B') ? 'sandy' : 'clay';
+    const idx = slope < 2 ? 0 : (slope <= 7 ? 1 : 2);
+    base = RO_LAWN[tex][idx]; basis = `Lawn, ${tex} soil, ${['flat (under 2%)', 'average (2-7%)', 'steep (over 7%)'][idx]}`;
+  } else if(cover === 'graded'){
+    if(slope > 7) return fail('The source table gives no value for graded bare ground steeper than 7%.');
+    const tex = (hsg === 'A' || hsg === 'B') ? 'sandy' : 'clay';
+    const idx = slope < 2 ? 0 : 1;
+    base = RO_GRADED[tex][idx]; basis = `Graded, no plant cover, ${tex} soil, ${['flat (under 2%)', 'average (2-7%)'][idx]}`;
+  } else if(RO_FIXED[cover]){
+    base = RO_FIXED[cover][1]; basis = RO_FIXED[cover][0] + ' (typical value)';
+  } else return fail('Unknown land cover.');
+
+  const imp = Math.min(100, Math.max(0, Number(impPct) || 0));
+  const mixed = RO_PERVIOUS.includes(cover) && imp > 0;
+  const composite = mixed ? base * (1 - imp / 100) + RO_IMPERVIOUS_C * (imp / 100) : base;
+  // C depends only on land cover, soil group, slope, and (optionally) the paved share. It does not change with storm size.
+  return { ok: true, base, composite, finalC: composite, basis, mixed, impPct: imp };
+}
+
+const NLCD_NAMES = { 11: 'Open water', 12: 'Perennial ice/snow', 21: 'Developed, open space', 22: 'Developed, low intensity',
+  23: 'Developed, medium intensity', 24: 'Developed, high intensity', 31: 'Barren land', 41: 'Deciduous forest', 42: 'Evergreen forest',
+  43: 'Mixed forest', 52: 'Shrub/scrub', 71: 'Grassland/herbaceous', 81: 'Pasture/hay', 82: 'Cultivated crops', 90: 'Woody wetlands', 95: 'Emergent herbaceous wetlands' };
+const NLCD_TO_COVER = { 41: 'woodland', 42: 'woodland', 43: 'woodland', 90: 'woodland', 52: 'pasture', 71: 'pasture', 81: 'pasture', 82: 'cultivated',
+  21: 'lawn', 22: 'res_suburban', 23: 'res_multi_detached', 24: 'biz_downtown', 31: 'graded' };
+const NLCD_NEAREST = [52, 71, 22, 23, 24, 31, 90]; // no exact match in the table; closest category chosen
+function nlcdToCover(code){
+  return { code, name: NLCD_NAMES[code] || `NLCD class ${code}`, cover: NLCD_TO_COVER[code] || null, nearest: NLCD_NEAREST.includes(code) };
+}
+
+// Land cover at the clicked point from the national land cover dataset (NLCD 2021, 30 m pixels).
+async function queryLandCover(lat, lon){
+  const d = 0.0005;
+  const url = 'https://www.mrlc.gov/geoserver/mrlc_display/NLCD_2021_Land_Cover_L48/wms?service=WMS&version=1.1.1&request=GetFeatureInfo'
+    + '&layers=NLCD_2021_Land_Cover_L48&query_layers=NLCD_2021_Land_Cover_L48&styles=&srs=EPSG:4326'
+    + `&bbox=${lon - d},${lat - d},${lon + d},${lat + d}&width=101&height=101&x=50&y=50&info_format=application/json`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('Land cover service returned ' + res.status);
+  const data = await res.json();
+  const props = data && data.features && data.features[0] && data.features[0].properties;
+  if(!props) return null;
+  const code = Number(props.GRAY_INDEX !== undefined ? props.GRAY_INDEX : Object.values(props)[0]);
+  return Number.isFinite(code) ? nlcdToCover(code) : null;
+}
+// </RUNOFF-LOGIC>
+
+function buildRunoffHtml(ctx){
+  const lc = ctx.landCover;
+  const groups = {};
+  RO_COVER_LIST.forEach(([id, label, group]) => { (groups[group] = groups[group] || []).push([id, label]); });
+  const selected = lc && lc.cover ? lc.cover : '';
+  const coverOptions = '<option value="">Choose land cover…</option>' + Object.entries(groups).map(([g, items]) =>
+    `<optgroup label="${escapeHtml(g)}">` + items.map(([id, label]) => `<option value="${id}"${id === selected ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('') + '</optgroup>').join('');
+  const coverNote = lc
+    ? `Detected at this point (NLCD 2021): ${escapeHtml(lc.name)}.${lc.cover ? (lc.nearest ? ' The table has no exact match, so the closest category is selected. Change it if it is wrong.' : '') : ' No matching category in the table. Choose one.'}`
+    : `Land cover could not be detected automatically${ctx.landCoverError ? ' (' + escapeHtml(ctx.landCoverError) + ')' : ''}. Choose it yourself.`;
+  const hsgOptions = ['', 'A', 'B', 'C', 'D'].map(v => `<option value="${v}"${v === (ctx.hsg || '') ? ' selected' : ''}>${v || 'Unknown'}</option>`).join('');
+  const hsgNote = ctx.hsg
+    ? `From the soil survey at this point.${ctx.hsgDual ? ' It is listed as a dual group (such as B/D), treated as D, which assumes the ground is not drained.' : ''}`
+    : 'No soil group was found at this point. Choose one if you know it.';
+  const slopeVal = ctx.slopePct !== null && ctx.slopePct !== undefined ? (Math.round(ctx.slopePct * 10) / 10) : '';
+  return `<div class="uses-body">
+    <div class="uses-title">Runoff Coefficient</div>
+    <div class="uses-sub">Rational Method C from land cover, soil group, and slope</div>
+    <div class="uses-block ro-form">
+      <label for="ro-cover">Land cover</label>
+      <select id="ro-cover" onchange="updateRunoff()">${coverOptions}</select>
+      <div class="uses-meta">${coverNote}</div>
+      <label for="ro-slope">Slope (%)</label>
+      <input id="ro-slope" type="number" min="0" step="0.1" value="${slopeVal}" oninput="updateRunoff()">
+      <div class="uses-meta">Estimated from elevation around the clicked point. Edit it if you know better.</div>
+      <label for="ro-hsg">Hydrologic soil group</label>
+      <select id="ro-hsg" onchange="updateRunoff()">${hsgOptions}</select>
+      <div class="uses-meta">${hsgNote}</div>
+      <label for="ro-imp">Share of the site paved or roofed (%)</label>
+      <input id="ro-imp" type="number" min="0" max="100" step="1" value="0" oninput="updateRunoff()">
+      <div class="uses-meta">For planning a development: the rest of the site keeps the land cover above. Not used for the developed and hard-surface choices, which already include it.</div>
+    </div>
+    <div class="uses-block" id="ro-result"></div>
+    <div class="uses-block"><div class="uses-meta">
+      Source: Greenville County, SC Stormwater Management Design Manual (2018), Tables 5-1 to 5-3. That is one South Carolina county's table. Mississippi and local jurisdictions publish their own values, so confirm which one governs a real project.<br>
+      The manual's values are for 5- to 10-year storms. C here does not change with storm size. Some local manuals add an upward adjustment for rarer storms, which this tool does not apply.<br>
+      The Rational Method is for peak flow from small drainage areas (this manual allows up to 20 acres), not for storage design.<br>
+      The manual lists lawns and graded ground by soil texture, so soil groups A and B are treated as sandy and C and D as clay.<br>
+      A screening estimate only, not a stormwater design.
+    </div></div>
+  </div>`;
+}
+
+function updateRunoff(){
+  const out = document.getElementById('ro-result');
+  if(!out) return;
+  const v = id => document.getElementById(id).value;
+  const cover = v('ro-cover');
+  const impBox = document.getElementById('ro-imp');
+  impBox.disabled = !RO_PERVIOUS.includes(cover);
+  const r = runoffC({ cover, slopePct: v('ro-slope'), hsg: v('ro-hsg'), impPct: impBox.disabled ? 0 : v('ro-imp') });
+  if(!r.ok){ out.innerHTML = `<div class="uses-empty">${escapeHtml(r.error)}</div>`; return; }
+  const lines = [`Table value: <strong>${r.base.toFixed(2)}</strong> (${escapeHtml(r.basis)})`];
+  if(r.mixed) lines.push(`With ${r.impPct}% paved or roofed (C = ${RO_IMPERVIOUS_C}): ${r.composite.toFixed(2)}`);
+  out.innerHTML = `<div class="uses-label">RUNOFF COEFFICIENT (C)</div>
+    <div class="ro-big">${r.finalC.toFixed(2)}</div>
+    <div class="uses-meta">${lines.join('<br>')}</div>
+    <div class="uses-meta">Roughly ${Math.round(r.finalC * 100)}% of the rain falling at the storm's peak leaves the site as runoff.</div>`;
+}
+
+// --- County-by-county data config scaffold ---
+// This is the seam the whole Mississippi rollout hangs off of: each county gets its own entry
+// with its own contour source/interval (which can change, per Harrison County going to 4'),
+// and each city gets its own zoning source. Nothing here is faked — entries with no confirmed
+// endpoint are marked pending rather than pointing at a guessed URL.
+const COUNTY_CONFIG = {
+  'harrison': {
+    name: 'Harrison County, MS',
+    contours: {
+      intervalFt: 1,
+      note: 'MARIS produced statewide 1\' and 2\' LiDAR-derived contours (per-county), and we should use the 1\' product — BUT it appears to be distributed as downloadable file geodatabases, not a live web map/query service. Separately, Harrison Co. is known to have since moved to 4\' contours at the county level — need to confirm which source (MARIS 1\' vs county 4\') takes precedence before wiring this in live.',
+      source: null, // pending: either host MARIS's 1' file geodatabase ourselves, or find a live county service
+    },
+    zoning: {
+      // Zoning is city-level, not county-level. Unincorporated county land needs its own rule.
+      jurisdictions: {
+        'biloxi': { source: null },       // pending: City of Biloxi zoning map service
+        'gulfport': { source: null },     // pending: City of Gulfport zoning map service
+        'unincorporated': { source: null }, // pending: county zoning, if any
+      },
+    },
+  },
+  // Add the next county here as we onboard it.
+};
+
+// --- USACE Approved Jurisdictional Determinations (AJDs) ---
+// This is designed to be updated WITHOUT touching this file: on load, the app tries to fetch a
+// hosted JSON dataset from AJD_DATA_URL. If that's unset or fails, it falls back to the small
+// bundled starter set below so the app still works with something. This split is what makes
+// "continually load new ones" possible — updating the dataset becomes "replace a JSON file
+// somewhere", not "edit and redeploy this HTML."
+//
+// KEEPING THIS CURRENT AUTOMATICALLY is a separate, backend problem this single HTML file can't
+// solve on its own: it needs a scheduled job (e.g. a small cron script, GitHub Action, or AWS
+// Lambda on a timer) that periodically re-scrapes USACE's published case files (or ingests a
+// bulk export, if Mobile District provides one) and republishes the JSON at AJD_DATA_URL. That
+// job is real infrastructure to build once you have real hosting — this file is ready for it
+// the moment that URL exists; nothing else about the app needs to change.
+const AJD_DATA_URL = ''; // set this to a hosted JSON URL once the update pipeline exists
+
+// Bundled fallback — the same 2 real Vicksburg District records as before. NO Mobile District
+// data yet; used only when AJD_DATA_URL is unset or unreachable.
+const AJD_FALLBACK_DATASET = [
+  { lat: 31.88729, lon: -90.886827, district: 'Vicksburg', fileNumber: 'MVK-2021-962', date: '2022-01-13',
+    outcome: 'non-jurisdictional', summary: 'Claiborne County (Pattison, MS), proposed FEMA 361 saferoom site — estimated boundary determined non-jurisdictional. Nearest waterbody: Little Bayou Pierre.',
+    sourceUrl: 'https://www.mvk.usace.army.mil/Missions/Regulatory/Jurisdictional-Determinations/Approved-JDs/FileId/333752/' },
+  { lat: 33.223431, lon: -89.655608, district: 'Vicksburg', fileNumber: 'MVK-2024-291', date: '2024-06-14',
+    outcome: 'non-jurisdictional', summary: 'Attala County, MS, 0.4-acre review area — no wetlands/streams present on NWI, predominately open upland with a house on the western boundary.',
+    sourceUrl: 'https://www.mvk.usace.army.mil/Missions/Regulatory/Jurisdictional-Determinations/Approved-JDs/FileId/392702' },
+];
+
+let AJD_DATASET = AJD_FALLBACK_DATASET;
+let ajdLoadStatus = { source: 'fallback', loadedAt: null, error: null };
+
+async function loadAjdDataset(){
+  if(!AJD_DATA_URL){
+    ajdLoadStatus = { source: 'fallback', loadedAt: new Date(), error: 'No AJD_DATA_URL configured yet.' };
+    return;
+  }
+  try{
+    const res = await fetch(AJD_DATA_URL);
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if(!Array.isArray(data)) throw new Error('Expected a JSON array of AJD records.');
+    AJD_DATASET = data;
+    ajdLoadStatus = { source: 'remote', loadedAt: new Date(), error: null };
+  }catch(err){
+    // Remote source failed — stay on the bundled fallback rather than showing nothing.
+    AJD_DATASET = AJD_FALLBACK_DATASET;
+    ajdLoadStatus = { source: 'fallback', loadedAt: new Date(), error: err.message };
+  }
+}
+loadAjdDataset(); // fire on page load — click handler reads whatever AJD_DATASET holds by then
+
+const AJD_REVIEW_RADIUS_FT = 300;
+const FT_PER_DEGREE_LAT = 364000; // rough constant, fine at this precision
+
+function haversineFeet(lat1, lon1, lat2, lon2){
+  const R_ft = 20902231; // Earth radius in feet
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+  return R_ft * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function findNearbyAJDs(lat, lon){
+  return AJD_DATASET
+    .map(ajd => ({ ...ajd, distanceFt: haversineFeet(lat, lon, ajd.lat, ajd.lon) }))
+    .filter(ajd => ajd.distanceFt <= AJD_REVIEW_RADIUS_FT)
+    .sort((a, b) => a.distanceFt - b.distanceFt);
+}
+
+document.getElementById('toggle-soils').addEventListener('change', e => {
+  e.target.checked ? soilsLayer.addTo(map) : map.removeLayer(soilsLayer);
+});
+document.getElementById('toggle-wetlands').addEventListener('change', e => {
+  e.target.checked ? wetlandsLayer.addTo(map) : map.removeLayer(wetlandsLayer);
+});
+document.getElementById('toggle-flood').addEventListener('change', e => {
+  e.target.checked ? floodLayer.addTo(map) : map.removeLayer(floodLayer);
+});
+document.getElementById('toggle-bfe').addEventListener('change', e => {
+  e.target.checked ? bfeLayer.addTo(map) : map.removeLayer(bfeLayer);
+});
+document.getElementById('toggle-waterways').addEventListener('change', e => {
+  e.target.checked ? waterwaysLayer.addTo(map) : map.removeLayer(waterwaysLayer);
+});
+
+let marker = null;
+let lastReportContext = null;
+const reportEl = document.getElementById('report');
+
+function pinIcon(){
+  return L.divIcon({ className: '', html: '<div class="parcel-pin"></div>', iconSize:[16,16], iconAnchor:[8,8] });
+}
+
+async function fetchElevation(lat, lon){
+  const url = `https://epqs.nationalmap.gov/v1/json?x=${lon}&y=${lat}&units=Meters&wkid=4326&includeDate=false`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('EPQS request failed: ' + res.status);
+  const data = await res.json();
+  const val = data && data.value !== undefined ? parseFloat(data.value) : null;
+  if(val === null || Number.isNaN(val) || val < -1000) throw new Error('No elevation data at this point');
+  return val;
+}
+
+// Sample elevation at 4 nearby points to estimate local slope (real data, small offsets)
+async function estimateSlope(lat, lon){
+  const dLat = 0.0015; // ~165m
+  const dLon = 0.0015 / Math.cos(lat * Math.PI/180);
+  const pts = [
+    [lat, lon],
+    [lat + dLat, lon],
+    [lat - dLat, lon],
+    [lat, lon + dLon],
+  ];
+  const elevs = await Promise.all(pts.map(([la, lo]) => fetchElevation(la, lo)));
+  const [center, north, south, east] = elevs;
+  const distMeters = dLat * 111320;
+  const riseNS = Math.abs(north - south);
+  const riseEW = Math.abs(east - center) * 2; // rough, one-sided sample
+  const maxRise = Math.max(riseNS, riseEW);
+  const slopePct = (maxRise / (2 * distMeters)) * 100;
+  return { centerElev: center, slopePct };
+}
+
+// --- Point-in-place queries against the same federal services (REST query, not just tiles) ---
+
+// ArcGIS REST endpoints often work fine for tile images (no CORS involved) but block direct
+// fetch() calls if the server doesn't send CORS headers for JSON responses. ArcGIS REST supports
+// JSONP as a standard fallback (loads via a <script> tag, which isn't subject to CORS) — try a
+// normal fetch first, and if that fails, fall back to JSONP before giving up.
+function fetchViaJsonp(url, timeoutMs = 8000){
+  return new Promise((resolve, reject) => {
+    const cbName = 'jsonp_cb_' + Math.random().toString(36).slice(2);
+    const script = document.createElement('script');
+    let done = false;
+    function cleanup(){ delete window[cbName]; script.remove(); }
+    window[cbName] = (data) => { done = true; resolve(data); cleanup(); };
+    script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + cbName;
+    script.onerror = () => { if(!done){ cleanup(); reject(new Error('JSONP request failed (network or blocked).')); } };
+    document.body.appendChild(script);
+    setTimeout(() => { if(!done){ cleanup(); reject(new Error('Request timed out.')); } }, timeoutMs);
+  });
+}
+
+async function arcgisQuery(url){
+  try{
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('Request failed: ' + res.status);
+    return await res.json();
+  }catch(err1){
+    // Tier 2: likely a CORS-blocked response rather than a real network failure — try JSONP,
+    // which loads via a <script> tag and isn't subject to the same restriction.
+    try{
+      return await fetchViaJsonp(url);
+    }catch(err2){
+      // Tier 3: this server apparently blocks both direct fetch AND JSONP (some ArcGIS Enterprise
+      // deployments lock CORS down to a specific allowed origin, like their own public map viewer,
+      // and disable the JSONP callback param too). Last resort: a public CORS proxy. This is a
+      // stopgap for a prototype, not a production answer — a real build should proxy this
+      // server-side instead of depending on a third-party proxy's uptime.
+      const proxied = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
+      const res = await fetch(proxied);
+      if(!res.ok) throw new Error(`All three request methods failed for this service (direct: ${err1.message}; JSONP: ${err2.message}; proxy: HTTP ${res.status}).`);
+      return await res.json();
+    }
+  }
+}
+
+async function queryNWI(lat, lon){
+  // "Failed to execute query" on a plain point query is a known quirk on some ArcGIS deployments —
+  // this specific service appears to be one of them. A tiny bounding box (envelope) around the
+  // point is a standard workaround and functionally equivalent at this scale (~11m square).
+  const d = 0.0001;
+  const url = `https://fwspublicservices.wim.usgs.gov/wetlandsmapservice/rest/services/Wetlands/MapServer/0/query?geometry=${lon-d},${lat-d},${lon+d},${lat+d}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=ATTRIBUTE,WETLAND_TYPE&returnGeometry=false&f=json`;
+  const data = await arcgisQuery(url);
+  if(data.error) throw new Error(data.error.message || 'NWI service error');
+  if(!data.features || data.features.length === 0) return null;
+  const a = data.features[0].attributes;
+  return { code: a.ATTRIBUTE, type: a.WETLAND_TYPE };
+}
+
+async function queryFlood(lat, lon){
+  // FEMA's National Flood Hazard Layer — the same authoritative dataset behind FEMA's own
+  // National Flood Hazard Layer Viewer / Flood Map Service Center. Routed through the CORS-safe
+  // helper so this is retrieved reliably on every click, not just when the server's headers cooperate.
+  const zoneUrl = `https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28/query?geometry=${lon},${lat}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=FLD_ZONE,ZONE_SUBTY,SFHA_TF,STATIC_BFE,V_DATUM&returnGeometry=false&f=json`;
+  const data = await arcgisQuery(zoneUrl);
+  if(data.error) throw new Error(data.error.message || 'NFHL service error');
+  if(!data.features || data.features.length === 0) return null;
+  const a = data.features[0].attributes;
+
+  // STATIC_BFE covers constant-elevation zones (coastal V-zones, lakes) directly on the polygon.
+  // Most riverine AE zones don't carry a static value — FEMA shows BFE there via separate contour
+  // lines instead (layer 16), so fall back to the nearest one within ~100m when STATIC_BFE is empty.
+  // That's an approximation (nearest line, not true interpolation between two lines) — labeled as such.
+  let bfe = (a.STATIC_BFE !== undefined && a.STATIC_BFE !== null && a.STATIC_BFE > -9998) ? a.STATIC_BFE : null;
+  let bfeSource = bfe !== null ? 'static' : null;
+
+  if(bfe === null){
+    try{
+      const lineUrl = `https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/16/query?geometry=${lon},${lat}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&distance=100&units=esriSRUnit_Meter&outFields=ELEV&returnGeometry=false&f=json`;
+      const lineData = await arcgisQuery(lineUrl);
+      if(lineData.features && lineData.features.length > 0){
+        bfe = lineData.features[0].attributes.ELEV;
+        bfeSource = 'nearest-line';
+      }
+    }catch(err){
+      // BFE line lookup failing shouldn't break the flood zone result itself — zone still returns.
+    }
+  }
+
+  return { zone: a.FLD_ZONE, subtype: a.ZONE_SUBTY, inSFHA: a.SFHA_TF, bfe, bfeSource, datum: a.V_DATUM };
+}
+
+async function queryNhdLayer(layerId, lat, lon, distance){
+  const url = `https://hydro.nationalmap.gov/arcgis/rest/services/nhd/MapServer/${layerId}/query?geometry=${lon},${lat}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&distance=${distance}&units=esriSRUnit_Meter&outFields=GNIS_NAME,FTYPE&returnGeometry=false&f=json`;
+  const data = await arcgisQuery(url);
+  if(data.error) throw new Error(data.error.message || 'NHD service error');
+  return data.features || [];
+}
+
+async function queryWaterway(lat, lon){
+  // Query BOTH layers: Waterbody (lakes/ponds/estuaries, polygons) and Flowline (streams/rivers,
+  // "blue lines" — including unnamed tributaries with no polygon at all). Missing Flowline was the
+  // bug: a point dropped right on a blue-line stream connecting to the Gulf showed no hit before,
+  // because Waterbody alone doesn't cover flowing streams.
+  // 30m on flowlines (thin lines, a click should be right on/near it) vs 150m on waterbody polygons.
+  const [waterbodyFeatures, flowlineFeatures] = await Promise.all([
+    queryNhdLayer(10, lat, lon, 150),
+    queryNhdLayer(6, lat, lon, 30),
+  ]);
+  const all = [
+    ...waterbodyFeatures.map(f => ({ ...f.attributes, source: 'waterbody' })),
+    ...flowlineFeatures.map(f => ({ ...f.attributes, source: 'flowline' })),
+  ];
+  if(all.length === 0) return null;
+  const named = all.find(a => a.GNIS_NAME && a.GNIS_NAME.trim());
+  const pick = named || all[0];
+  return { name: pick.GNIS_NAME || null, ftype: pick.FTYPE, source: pick.source, isFlowline: all.some(a => a.source === 'flowline') };
+}
+
+const TIDAL_FTYPES = new Set(['Estuary','Bay/Inlet','Sea/Ocean','Sound']);
+
+function floodZoneLabel(flood){
+  if(!flood || !flood.zone) return null;
+  if(flood.bfe === null || flood.bfe === undefined) return flood.zone;
+  return `${flood.zone}${Math.round(flood.bfe)}`; // e.g. "AE16", "VE21"
+}
+
+function floodScore(flood){
+  if(!flood) return { pts: 15, note: 'No mapped flood hazard at this point.' };
+  const label = floodZoneLabel(flood);
+  const bfeNote = flood.bfe !== null && flood.bfe !== undefined
+    ? ` Base Flood Elevation ${flood.bfe} ft${flood.datum ? ' (' + flood.datum + ')' : ''}${flood.bfeSource === 'nearest-line' ? ' — approximated from the nearest BFE contour line, not a precise on-site value' : ''}.`
+    : '';
+  if(flood.inSFHA === 'T' || /^A|^V/.test(flood.zone || '')) {
+    return { pts: 2, note: `Zone ${label}${flood.subtype ? ' ('+flood.subtype+')' : ''} — inside the Special Flood Hazard Area. Flood insurance will likely be required.${bfeNote}` };
+  }
+  return { pts: 12, note: `Zone ${label || 'X'} — outside the mapped high-risk flood zone.${bfeNote}` };
+}
+
+function wetlandNote(wetland){
+  if(!wetland) return { pts: 20, note: 'No NWI-mapped wetland at this exact point.' };
+  return { pts: 6, note: `NWI shows a mapped wetland here (code ${wetland.code}). This is a reference layer only — not a legal jurisdictional boundary. A wetland delineation by a qualified consultant is the only way to confirm actual regulatory status.` };
+}
+// --- HYDRIC SOILS (Web Soil Survey's "Hydric Rating by Map Unit") ---
+// Asks Soil Data Access (the database behind Web Soil Survey) which soil map unit sits under the
+// clicked point, then reads its hydric rating two ways so they can be compared:
+//   1) muaggatt.hydclprs: the map unit's % hydric, the number behind WSS's Hydric Rating by Map Unit.
+//   2) the unit's soil components and whether each is rated hydric (summed by component share).
+// The reply uses the JSON+COLUMNNAME format, so row 0 is the column names and values are read BY
+// NAME. (An earlier version asked for plain JSON, which has no header row, and mistook the single
+// data row for a header. That made most hydric soils read as "no rating".)
+// <HYDRIC-LOGIC>
+const HYDRIC_INDICATOR_PCT = 33; // WSS's "Partially hydric" class starts here; used for the wetland cross-check
+
+function parseSdaTable(table){
+  if(!Array.isArray(table) || table.length < 2) return [];
+  const cols = table[0].map(c => String(c).toLowerCase());
+  return table.slice(1).map(row => Object.fromEntries(cols.map((c, i) => [c, row[i]])));
+}
+
+function hydricCategory(pct){
+  if(pct === null || pct === undefined) return 'Not rated';
+  if(pct >= 100) return 'Hydric (100%)';
+  if(pct >= 66) return 'Predominantly hydric (66-99%)';
+  if(pct >= 33) return 'Partially hydric (33-65%)';
+  if(pct >= 1) return 'Predominantly nonhydric (1-32%)';
+  return 'Nonhydric (0%)';
+}
+
+// Hydrologic soil group: A, B, C, or D. Dual groups (A/D, B/D, C/D) mean "D if undrained"; treated as D.
+function normalizeHsg(h){
+  const v = String(h || '').trim().toUpperCase();
+  if(/^[ABCD]$/.test(v)) return { hsg: v, dual: false };
+  if(/^[ABC]\/D$/.test(v)) return { hsg: 'D', dual: true };
+  return null;
+}
+
+function summarizeHydric(rows){
+  if(!rows.length) return null;
+  const groups = new Map();
+  rows.forEach(r => { if(!groups.has(r.mukey)) groups.set(r.mukey, []); groups.get(r.mukey).push(r); });
+  const units = [...groups.values()].map(group => {
+    const first = group[0];
+    const muPct = (first.hydclprs === null || first.hydclprs === undefined || first.hydclprs === '') ? NaN : parseFloat(first.hydclprs);
+    const components = group.filter(r => r.compname).map(r => ({ name: r.compname, pct: parseFloat(r.comppct_r), rating: r.hydricrating, hsg: r.hydgrp }));
+    const anyRated = components.some(c => c.rating === 'Yes' || c.rating === 'No');
+    const compPct = components.filter(c => c.rating === 'Yes').reduce((sum, c) => sum + (isNaN(c.pct) ? 0 : c.pct), 0);
+    const hydricPct = !isNaN(muPct) ? muPct : (anyRated ? compPct : null);
+    // Dominant hydrologic soil group: the group holding the largest share of the unit's components.
+    const hsgTotals = {}, hsgDualFlags = {};
+    components.forEach(c => {
+      const n = normalizeHsg(c.hsg);
+      if(n && !isNaN(c.pct)){ hsgTotals[n.hsg] = (hsgTotals[n.hsg] || 0) + c.pct; if(n.dual) hsgDualFlags[n.hsg] = true; }
+    });
+    const hsgTop = Object.entries(hsgTotals).sort((a, b) => b[1] - a[1])[0];
+    return {
+      hsg: hsgTop ? hsgTop[0] : null,
+      hsgDual: hsgTop ? !!hsgDualFlags[hsgTop[0]] : false,
+      mukey: first.mukey, musym: first.musym, muname: first.muname,
+      hydricPct,
+      compHydricPct: anyRated ? compPct : null,
+      mismatch: !isNaN(muPct) && anyRated && Math.abs(muPct - compPct) > 1,
+      components,
+    };
+  });
+  // A point normally sits in exactly one map unit. On a boundary it can touch two; for screening,
+  // report the more hydric one and say so.
+  units.sort((a, b) => (b.hydricPct ?? -1) - (a.hydricPct ?? -1));
+  return { ...units[0], unitCount: units.length };
+}
+
+async function queryHydric(lat, lon){
+  const sql = `SELECT mu.mukey, mu.musym, mu.muname, ma.hydclprs, c.compname, c.comppct_r, c.hydricrating, c.hydgrp
+               FROM mapunit mu
+               INNER JOIN muaggatt ma ON ma.mukey = mu.mukey
+               LEFT JOIN component c ON c.mukey = mu.mukey
+               WHERE mu.mukey IN (
+                 SELECT mukey FROM SDA_Get_Mukey_from_intersection_with_WktWgs84('point(${Number(lon).toFixed(6)} ${Number(lat).toFixed(6)})')
+               )
+               ORDER BY mu.mukey, c.comppct_r DESC`;
+  // Form-encoded body (what USDA documents) avoids an extra browser permission check.
+  const res = await fetch('https://sdmdataaccess.sc.egov.usda.gov/Tabular/post.rest', {
+    method: 'POST',
+    body: new URLSearchParams({ query: sql, format: 'JSON+COLUMNNAME' }),
+  });
+  if(!res.ok) throw new Error('Soil Data Access query failed: ' + res.status);
+  const data = await res.json();
+  return summarizeHydric(parseSdaTable(data.Table));
+}
+
+function hydricComponentsLine(h){
+  if(!h.components.length) return '';
+  const parts = h.components.slice(0, 6).map(c =>
+    `${escapeHtml(c.name)} (${isNaN(c.pct) ? '?' : c.pct}%, ${c.rating === 'Yes' ? 'hydric' : (c.rating === 'No' ? 'not hydric' : 'unranked')})`);
+  return 'Components: ' + parts.join('; ') + (h.components.length > 6 ? '; …' : '') + '.';
+}
+// </HYDRIC-LOGIC>
+
+function hydricScore(hydric){
+  if(!hydric) return { pts: 15, note: 'No soil map unit was found at this exact point (it may be water, pavement, or a gap in the survey), so there is no hydric rating.' };
+  const unit = `Map unit ${hydric.musym ? escapeHtml(hydric.musym) + ' — ' : ''}${escapeHtml(hydric.muname || '')}`;
+  if(hydric.hydricPct === null) return { pts: 15, note: `${unit} has no hydric rating in the soil survey.` };
+  const cat = hydricCategory(hydric.hydricPct);
+  const tail = ' This is the map unit at the clicked point; other parts of the parcel can sit in different map units.'
+    + (hydric.mismatch ? ` Note: the map unit summary (${hydric.hydricPct}%) and the component list (${hydric.compHydricPct}%) disagree, so check the details in Web Soil Survey.` : '')
+    + (hydric.unitCount > 1 ? ' This point sits on a boundary between soil map units; the more hydric one is shown.' : '');
+  if(hydric.hydricPct >= 50) return { pts: 5, note: `${unit}: ${cat}. Strong on-the-ground indicator of wetland conditions, independent of the NWI map.${tail}` };
+  if(hydric.hydricPct > 0) return { pts: 10, note: `${unit}: ${cat}. A mixed indicator, worth a closer look where it overlaps NWI or low-lying ground.${tail}` };
+  return { pts: 18, note: `${unit}: ${cat}.${tail}` };
+}
+function gradeFromScore(score){
+  if(score >= 85) return 'A';
+  if(score >= 70) return 'B';
+  if(score >= 55) return 'C';
+  if(score >= 40) return 'D';
+  return 'F';
+}
+
+// Grade order for capping — some conditions are hard ceilings, not just inputs to a weighted
+// average. A great slope score shouldn't be able to wash out a genuine AE flood zone.
+const GRADE_ORDER = ['A','B','C','D','F'];
+function capGrade(currentGrade, cap){
+  return GRADE_ORDER.indexOf(currentGrade) < GRADE_ORDER.indexOf(cap) ? cap : currentGrade;
+}
+
+function applyGradeOverrides(computedGrade, { flood, waterway, hydric, elev, ajdMatches }){
+  let grade = computedGrade;
+  const flags = [];
+  const notes = []; // informational, non-capping — mitigating context, not warnings
+
+  if(flood.ok && flood.value && /^(AE|VE)$/.test(flood.value.zone || '')){
+    grade = capGrade(grade, 'B');
+    flags.push(`Capped at B — Zone ${flood.value.zone} is a high-risk flood zone (AE/VE), regardless of other factors.`);
+  }
+
+  const touchesNamedOrTidalWater = waterway.ok && waterway.value && (!!waterway.value.name || TIDAL_FTYPES.has(waterway.value.ftype));
+
+  if(waterway.ok && waterway.value){
+    const tidal = TIDAL_FTYPES.has(waterway.value.ftype);
+    const named = !!waterway.value.name;
+    const flowline = !!waterway.value.isFlowline;
+    if(tidal || named || flowline){
+      grade = capGrade(grade, 'C');
+      const what = named ? `"${waterway.value.name}"` : (flowline ? 'an unnamed stream/blue-line' : 'a water body');
+      flags.push(`Capped at C — parcel is at or near ${what}${tidal ? ' (tidally influenced)' : ''}${flowline ? ' that is part of the mapped stream network' : ''}. Flagged as possible jurisdictional wetland/water; recommend professional review before relying on this grade. (Note: this is a proximity check, not a true parcel-boundary "touching" test — that needs real parcel geometry, which isn't wired in yet.)`);
+    }
+  }
+
+  // Slope x hydric soils interpretation — per your rule of thumb, not a formal delineation method.
+  if(hydric.ok && hydric.value && hydric.value.hydricPct > 0 && elev.ok){
+    const slope = elev.value.slopePct;
+    const pct = hydric.value.hydricPct;
+    if(slope < 0.5){
+      grade = capGrade(grade, 'C');
+      flags.push(`Capped at C — hydric soil indication (${pct}%) combined with very low slope (${slope.toFixed(2)}%) suggests the site is likely wet. Recommend a wetland delineation before relying on this grade.`);
+    } else if(slope > 2 && !touchesNamedOrTidalWater){
+      notes.push(`Hydric soil indication (${pct}%) is present, but slope is ${slope.toFixed(1)}% and no named/tidal water body was found nearby — this combination often supports a non-jurisdictional determination. Not capped for this reason alone, but worth noting as a mitigating factor. Only a formal review can confirm it.`);
+    }
+  }
+
+  // USACE Approved Jurisdictional Determination within the review radius — this is the strongest
+  // possible signal (an actual, final ruling by the regulating agency), so it overrides everything
+  // else and forces immediate review regardless of what the other indicators say.
+  if(ajdMatches && ajdMatches.length > 0){
+    grade = capGrade(grade, 'C');
+    const nearest = ajdMatches[0];
+    flags.push(`IMMEDIATE REVIEW — a USACE Approved Jurisdictional Determination (${nearest.district} District, ${nearest.fileNumber}, ${nearest.date}) is ${Math.round(nearest.distanceFt)} ft away: ${nearest.outcome}. ${nearest.summary} This is an actual agency ruling, not an inferred indicator — treat it as the primary fact on this site, not just one input among others.`);
+  }
+
+  return { grade, flags, notes };
+}
+
+function scoreSlope(slopePct){
+  if(slopePct < 5) return { pts: 35, note: 'Gently sloped — favorable for building, drainage, and access.' };
+  if(slopePct < 12) return { pts: 25, note: 'Moderate slope — buildable with standard grading, watch runoff.' };
+  if(slopePct < 20) return { pts: 12, note: 'Steep — likely needs engineered foundations or terracing.' };
+  return { pts: 3, note: 'Very steep — significant grading, erosion, and access challenges likely.' };
+}
+
+function renderLoading(latlng){
+  reportEl.innerHTML = `
+    <div class="rep-header">
+      <div class="label">FIELD REPORT — IN PROGRESS</div>
+      <h1>Parcel Survey</h1>
+      <div class="coords">${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}</div>
+    </div>
+    <div class="findings">
+      <div class="finding"><span class="spinner"></span>Querying USGS elevation, NWI wetlands, FEMA flood zones, and NHD waterways…</div>
+    </div>
+  `;
+}
+
+function fmtStatus(ok){ return ok ? '<span class="tag live">LIVE</span>' : '<span class="tag na">UNAVAILABLE</span>'; }
+
+function renderReport(latlng, results){
+  const { elev, wetland, flood, waterway, parcel, hydric, zoning, landcover } = results;
+  const zoningInfo = describeZoning(zoning);
+
+  const parcelLine = (() => {
+    if(!parcel.ok) return null;
+    if(!parcel.value) return 'No parcel found at this exact point (may be right-of-way, water, or a data gap).';
+    const p = parcel.value;
+    const bits = [];
+    if(p.parcelId) bits.push(`Parcel ${p.parcelId}`);
+    if(p.county) bits.push(p.county);
+    if(p.acres) bits.push(`${parseFloat(p.acres).toFixed(2)} ac`);
+    bits.push(`via ${p.source === 'regrid' ? 'Regrid' : 'MARIS'}`);
+    return bits.length ? bits.join(' — ') : 'Parcel matched, but expected fields weren\'t present — schema may differ from what we guessed.';
+  })();
+
+  const countyKey = parcel.ok && parcel.value && parcel.value.county ? parcel.value.county.trim().toLowerCase() : null;
+  const countyCfg = countyKey && COUNTY_CONFIG[countyKey] ? COUNTY_CONFIG[countyKey] : null;
+
+  const slopeResult = elev.ok ? scoreSlope(elev.value.slopePct) : { pts: 20, note: 'Slope unknown — elevation service unavailable, scored neutrally.' };
+  const floodResult = flood.ok ? floodScore(flood.value) : { pts: 15, note: 'Flood zone unknown — FEMA service unavailable, scored neutrally.' };
+  const wetlandResult = wetland.ok ? wetlandNote(wetland.value) : { pts: 20, note: 'Wetlands layer unavailable — scored neutrally.' };
+  const hydricResult = hydric.ok ? hydricScore(hydric.value) : { pts: 15, note: 'Hydric rating unavailable — Soil Data Access service unreachable, scored neutrally.' };
+  const accessPts = 20; // placeholder — road/utility access not yet wired up
+
+  const rawScore = slopeResult.pts + floodResult.pts + wetlandResult.pts + hydricResult.pts + accessPts;
+  const MAX_RAW = 35 + 15 + 20 + 18 + 20; // slope + flood + wetland + hydric + access
+  const totalScore = Math.round((rawScore / MAX_RAW) * 100);
+  const baseGrade = gradeFromScore(totalScore);
+  const ajdMatches = findNearbyAJDs(latlng.lat, latlng.lng);
+  const { grade, flags: gradeFlags, notes: gradeNotes } = applyGradeOverrides(baseGrade, { flood, waterway, hydric, elev, ajdMatches });
+
+  lastReportContext = {
+    lat: latlng.lat, lng: latlng.lng, grade, totalScore,
+    zoning: zoning.ok && zoning.value ? [...new Set(zoning.value.hits.map(h => h.code))] : [],
+    slopePct: elev.ok ? elev.value.slopePct : null,
+    hsg: hydric.ok && hydric.value ? hydric.value.hsg : null,
+    hsgDual: hydric.ok && hydric.value ? hydric.value.hsgDual : false,
+    landCover: landcover && landcover.ok ? landcover.value : null,
+    landCoverError: landcover && !landcover.ok ? landcover.error : null,
+    parcelId: parcel.ok && parcel.value ? parcel.value.parcelId : null,
+    county: parcel.ok && parcel.value ? parcel.value.county : null,
+    flags: gradeFlags,
+  };
+
+  // The Allowed Uses tab only appears when a parcel was actually clicked: hidden when the parcel
+  // lookup worked but found no parcel at this point (road, water, gap).
+  const showUsesTab = !(parcel.ok && !parcel.value);
+  const tabBar = showUsesTab
+    ? `<div class="report-tabs"><button class="tab-btn active" id="tabbtn-eval" onclick="showReportTab('eval')">Evaluation</button><button class="tab-btn" id="tabbtn-uses" onclick="showReportTab('uses')">Allowed Uses</button><button class="tab-btn" id="tabbtn-runoff" onclick="showReportTab('runoff')">Runoff</button></div>`
+    : '';
+  const usesPanel = showUsesTab
+    ? `<div id="tab-uses" style="display:none">${buildAllowedUsesHtml(zoning, parcel)}</div><div id="tab-runoff" style="display:none">${buildRunoffHtml(lastReportContext)}</div>`
+    : '';
+
+  let waterwayLine = 'No mapped stream, river, or water body (waterbody or blue-line flowline) within range of this point.';
+  let waterwayTag = '<span class="tag live">LIVE — NHD</span>';
+  if(!waterway.ok){
+    waterwayLine = 'Waterway lookup unavailable.';
+    waterwayTag = '<span class="tag na">UNAVAILABLE</span>';
+  } else if(waterway.value && waterway.value.name){
+    const tidal = TIDAL_FTYPES.has(waterway.value.ftype);
+    waterwayLine = `${waterway.value.name}${tidal ? ' — tidally influenced' : ''} (NHD type: ${waterway.value.ftype}, ${waterway.value.source}). ${tidal ? 'Tidal waters typically carry additional federal/state jurisdictional setbacks.' : ''}`;
+  } else if(waterway.value && waterway.value.isFlowline){
+    waterwayLine = `Unnamed blue-line stream at/near this point (NHD Flowline, type: ${waterway.value.ftype}). Part of the mapped drainage network — this is exactly the "blue line" case that should be flagged, even without a name.`;
+  } else if(waterway.value){
+    waterwayLine = `Unnamed water feature nearby (NHD type: ${waterway.value.ftype}).`;
+  }
+
+  reportEl.innerHTML = `
+    <div class="rep-header">
+      <div class="label">FIELD REPORT</div>
+      <h1>Parcel Survey</h1>
+      <div class="coords">${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}</div>
+      <div class="coords" style="margin-top:4px;">${parcel.ok ? (parcelLine || '') : 'Parcel lookup unavailable'}</div>
+    </div>
+    ${tabBar}
+    <div id="tab-eval">
+    <div class="grade-block">
+      <div class="grade-letter">${grade}</div>
+      <div class="grade-meta">
+        <div class="score">SCORE ${totalScore}/100${grade !== baseGrade ? ` (uncapped: ${baseGrade})` : ''}</div>
+        <div class="summary">${slopeResult.note}</div>
+        ${gradeFlags.map(f => `<div class="summary" style="color:var(--danger); margin-top:4px;">⚠ ${f}</div>`).join('')}
+        ${gradeNotes.map(n => `<div class="summary" style="color:var(--survey-green); margin-top:4px;">ℹ ${n}</div>`).join('')}
+      </div>
+    </div>
+
+    <div class="findings">
+      <div class="finding">
+        <div class="f-head"><span class="f-name">Elevation (3DEP)</span><span class="f-val">${elev.ok ? (elev.value.centerElev * 3.28084).toFixed(1) + ' ft' : '—'}</span>${fmtStatus(elev.ok)}</div>
+        <div class="f-note">${elev.ok ? 'Sampled from USGS 3DEP elevation data at this exact coordinate.' : elev.error}</div>
+      </div>
+      <div class="finding">
+        <div class="f-head"><span class="f-name">Local slope</span><span class="f-val">${elev.ok ? elev.value.slopePct.toFixed(1) + '%' : '—'}</span>${fmtStatus(elev.ok)}</div>
+        <div class="f-note">${slopeResult.note}</div>
+      </div>
+      <div class="finding">
+        <div class="f-head"><span class="f-name">NWI wetlands</span><span class="f-val">${wetland.ok ? (wetland.value ? 'Mapped' : 'None') : '—'}</span>${fmtStatus(wetland.ok)}</div>
+        <div class="f-note">${wetland.ok ? wetlandResult.note : `${wetland.error} The map layer itself still shows NWI boundaries visually — only this automated point lookup is failing (possibly tied to a funding-lapse notice currently posted on FWS's own site). Check it directly instead: <a href="https://www.fws.gov/program/national-wetlands-inventory/wetlands-mapper" target="_blank" rel="noopener">open the official NWI Wetlands Mapper</a> and search this coordinate: <strong>${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}</strong>.`}</div>
+      </div>
+      <div class="finding">
+        <div class="f-head"><span class="f-name">Hydric soils</span><span class="f-val">${hydric.ok ? (hydric.value ? (hydric.value.hydricPct === null ? 'Not rated' : hydric.value.hydricPct + '%') : 'No soil data') : '—'}</span>${fmtStatus(hydric.ok)}</div>
+        <div class="f-note">${hydric.ok ? hydricResult.note : hydric.error}${hydric.ok && hydric.value ? '<br>' + hydricComponentsLine(hydric.value) : ''} <em>Read live from Web Soil Survey's Soil Data Access database (Hydric Rating by Map Unit).</em></div>
+      </div>
+      <div class="finding">
+        <div class="f-head"><span class="f-name">Wetland cross-check</span><span class="f-val"></span>${(wetland.ok && hydric.ok) ? '<span class="tag live">LIVE</span>' : '<span class="tag na">PARTIAL</span>'}</div>
+        <div class="f-note">${(() => {
+          if(!wetland.ok && hydric.ok){
+            const hydricHit = hydric.value && hydric.value.hydricPct >= HYDRIC_INDICATOR_PCT;
+            return `NWI's automated check is unavailable right now, so this leans on hydric soils alone: ${hydricHit ? 'the soil here IS partially or predominantly hydric (33%+) — worth checking NWI manually (link above) before ruling wetland concerns out.' : 'the soil here is NOT partially or predominantly hydric (33%+) — a decent sign, but confirm against NWI manually (link above) since that\'s only one of two indicators.'}`;
+          }
+          if(!wetland.ok || !hydric.ok) return 'Needs both NWI and hydric soils data to cross-check — one or both were unavailable this time.';
+          const nwiHit = !!wetland.value;
+          const hydricHit = hydric.value && hydric.value.hydricPct >= HYDRIC_INDICATOR_PCT;
+          if(nwiHit && hydricHit) return 'NWI shows a wetland here AND the soil is partially or predominantly hydric (33%+) — two independent indicators agree. Still not a substitute for a formal delineation, but this is the strongest signal the app can give without one.';
+          if(nwiHit && !hydricHit) return 'NWI shows a wetland here, but the soil at this point is NOT partially or predominantly hydric (33%+) — exactly the kind of mismatch you flagged: NWI\'s boundary may be imprecise at this exact spot. Worth a closer look, not a definitive "not a wetland."';
+          if(!nwiHit && hydricHit) return 'NWI shows nothing here, but the soil IS partially or predominantly hydric (33%+) — a possible unmapped or under-mapped wetland indicator.';
+          return 'Neither NWI nor hydric soils indicate a wetland at this point.';
+        })()}</div>
+      </div>
+      <div class="finding">
+        <div class="f-head"><span class="f-name">USACE Approved JDs (${AJD_REVIEW_RADIUS_FT}')</span><span class="f-val">${ajdMatches.length}</span>${ajdMatches.length ? '<span class="tag na">IMMEDIATE REVIEW</span>' : '<span class="tag live">LIVE</span>'}</div>
+        <div class="f-note">${ajdMatches.length
+          ? ajdMatches.map(a => `${a.fileNumber} (${a.district}, ${a.date}) — ${Math.round(a.distanceFt)} ft away, ${a.outcome}: ${a.summary}${a.sourceUrl ? ` <a href="${a.sourceUrl}" target="_blank" rel="noopener">source document</a>` : ''}`).join('<br>')
+          : `No published AJD within ${AJD_REVIEW_RADIUS_FT} ft of this point.`}
+          <br><em>Dataset: ${ajdLoadStatus.source === 'remote' ? `live, ${AJD_DATASET.length} records from hosted source` : `bundled starter set only (${AJD_DATASET.length} Vicksburg records, no Mobile District data yet)${ajdLoadStatus.error ? ' — remote source: ' + ajdLoadStatus.error : ' — no remote source configured yet'}`}.</em></div>
+      </div>
+      <div class="finding">
+        <div class="f-head"><span class="f-name">Flood zone (BFE)</span><span class="f-val">${flood.ok ? (flood.value ? (floodZoneLabel(flood.value) || flood.value.zone) : 'X') : '—'}</span>${fmtStatus(flood.ok)}</div>
+        <div class="f-note">${flood.ok ? floodResult.note : flood.error}</div>
+      </div>
+      <div class="finding">
+        <div class="f-head"><span class="f-name">Waterway / blue-line stream</span><span class="f-val"></span>${waterwayTag}</div>
+        <div class="f-note">${waterwayLine}</div>
+      </div>
+      <div class="finding">
+        <div class="f-head"><span class="f-name">Zoning</span><span class="f-val">${zoningInfo.val}</span>${zoningInfo.tag}</div>
+        <div class="f-note">${zoningInfo.note}</div>
+      </div>
+      <div class="finding">
+        <div class="f-head"><span class="f-name">2' contours</span><span class="f-val">—</span><span class="tag na">${countyCfg ? 'PENDING SOURCE' : 'NO COUNTY MATCHED'}</span></div>
+        <div class="f-note">${countyCfg ? `${countyCfg.name}: interval is ${countyCfg.contours.intervalFt}' per our records (${countyCfg.contours.note}). Live precise contour source not yet wired up for this county — try the live USGS contours layer (variable interval) in the meantime.` : 'Contours are sourced per-county — this county isn\'t in the config yet.'}</div>
+      </div>
+    </div>
+
+    <div class="upgrade-panel${gradeFlags.length ? ' has-flags' : ''}">
+      <div class="upgrade-title">${gradeFlags.length ? '⚠ Constraints detected — recommend a professional review' : 'Free evaluation ends here'}</div>
+      <div class="upgrade-body">This is the self-service picture — enough to screen a property yourself. Zoning &amp; allowable uses, road/water/sewer access, and a full jurisdictional wetland opinion go deeper than public data alone can responsibly answer${gradeFlags.length ? ', especially the parts flagged ⚠ above' : ''}.</div>
+      <div class="upgrade-body">A paid detailed evaluation combines AI analysis of all the data on this page with a qualified human review for anything the data can't settle on its own — never an automated answer alone on a call like a wetland or zoning determination.</div>
+      <button class="request-btn" onclick="openRequestModal()">Request Detailed Professional Review →</button>
+    </div>
+
+    <div class="footnote">Dew Diligent v0.2 — prototype. Elevation, slope, NWI, FEMA flood, NHD waterway, and hydric soils data are queried live per-click. Grade caps apply for AE/VE flood zones and adjacent tidal/named water bodies. Parcels, 1' contours, zoning, and utility access are the next build phases. NWI is a reference layer only, never a legal wetland boundary. Not a substitute for a licensed land survey or wetland delineation.</div>
+    </div>
+    ${usesPanel}
+  `;
+  if(document.getElementById('ro-result')) updateRunoff();
+}
+
+// --- MEASUREMENT TOOLS (distance and area) ---
+// Click points on the map. Distance adds up the length of the path; Area closes the shape and
+// reports its size plus perimeter. Uses the same earth model as the rest of the app, so numbers are
+// approximate (a hand-drawn estimate, not a survey).
+// <MEASURE-LOGIC>
+function pathLengthFt(pts, closed){
+  let total = 0;
+  for(let i = 1; i < pts.length; i++) total += haversineFeet(pts[i-1].lat, pts[i-1].lng, pts[i].lat, pts[i].lng);
+  if(closed && pts.length > 2) total += haversineFeet(pts[pts.length-1].lat, pts[pts.length-1].lng, pts[0].lat, pts[0].lng);
+  return total;
+}
+
+// Area of a polygon on a sphere (same method Leaflet.draw uses), in square feet.
+function polygonAreaSqFt(pts){
+  if(pts.length < 3) return 0;
+  const R_ft = 20902231; // same earth radius as haversineFeet
+  const rad = Math.PI / 180;
+  let sum = 0;
+  for(let i = 0; i < pts.length; i++){
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    sum += (b.lng - a.lng) * rad * (2 + Math.sin(a.lat * rad) + Math.sin(b.lat * rad));
+  }
+  return Math.abs(sum * R_ft * R_ft / 2);
+}
+
+function formatLengthFt(ft){
+  const main = (ft < 100 ? ft.toFixed(1) : Math.round(ft).toLocaleString('en-US')) + ' ft';
+  return ft >= 528 ? `${main} (${(ft / 5280).toFixed(2)} mi)` : main;
+}
+function formatAreaSqFt(sqft){
+  const acres = sqft / 43560;
+  return `${Math.round(sqft).toLocaleString('en-US')} sq ft (${acres < 1 ? acres.toFixed(3) : acres.toFixed(2)} acres)`;
+}
+// </MEASURE-LOGIC>
+
+let measureMode = null;      // null, 'distance', or 'area'
+let measureFinished = false;
+let measurePoints = [];
+let measureCursor = null;
+let measureShape = null;
+let measureVertices = [];
+const measureGroup = L.layerGroup().addTo(map);
+const mEl = id => document.getElementById(id);
+
+function measureActive(){ return measureMode !== null && !measureFinished; }
+
+function measureUpdateButtons(){
+  mEl('m-dist').classList.toggle('on', measureActive() && measureMode === 'distance');
+  mEl('m-area').classList.toggle('on', measureActive() && measureMode === 'area');
+  mEl('m-undo').style.display = measureActive() ? '' : 'none';
+  mEl('m-finish').style.display = measureActive() ? '' : 'none';
+}
+
+function measureRedraw(){
+  if(measureShape){ measureGroup.removeLayer(measureShape); measureShape = null; }
+  const pts = measureCursor && measureActive() ? [...measurePoints, measureCursor] : measurePoints;
+  const style = { color: '#C08A3E', weight: 3, opacity: 0.95 };
+  if(measureMode === 'area' && pts.length >= 3) measureShape = L.polygon(pts, { ...style, fillColor: '#C08A3E', fillOpacity: 0.18 });
+  else if(pts.length >= 2) measureShape = L.polyline(pts, style);
+  if(measureShape) measureGroup.addLayer(measureShape);
+
+  const read = mEl('m-read');
+  if(!measureMode){ read.textContent = ''; return; }
+  if(measureMode === 'distance'){
+    if(pts.length < 2){ read.textContent = measureActive() ? 'Click the first point.' : ''; return; }
+    const last = haversineFeet(pts[pts.length-2].lat, pts[pts.length-2].lng, pts[pts.length-1].lat, pts[pts.length-1].lng);
+    read.innerHTML = `<strong>Total:</strong> ${formatLengthFt(pathLengthFt(pts, false))}<br>Last leg: ${formatLengthFt(last)}`;
+  } else {
+    if(pts.length < 3){ read.textContent = measureActive() ? 'Click at least 3 corners.' : ''; return; }
+    read.innerHTML = `<strong>Area:</strong> ${formatAreaSqFt(polygonAreaSqFt(pts))}<br>Perimeter: ${formatLengthFt(pathLengthFt(pts, true))}`;
+  }
+}
+
+function measureReset(){
+  measureGroup.clearLayers();
+  measureShape = null; measureVertices = []; measurePoints = []; measureCursor = null;
+}
+
+function measureSetInteractive(on){
+  // While measuring: crosshair cursor, and double-click finishes instead of zooming.
+  mEl('map').classList.toggle('measuring', on);
+  if(on) map.doubleClickZoom.disable(); else map.doubleClickZoom.enable();
+}
+
+function measureStart(mode){
+  if(measureActive() && measureMode === mode){ measureFinish(); return; } // second press ends it
+  measureReset();
+  measureMode = mode; measureFinished = false;
+  measureSetInteractive(true);
+  measureUpdateButtons();
+  measureRedraw();
+}
+
+function measureFinish(){
+  if(!measureActive()) return;
+  measureFinished = true; measureCursor = null;
+  measureSetInteractive(false);
+  measureUpdateButtons();
+  measureRedraw();
+}
+
+function measureClear(){
+  measureReset();
+  measureMode = null; measureFinished = false;
+  measureSetInteractive(false);
+  measureUpdateButtons();
+  mEl('m-read').textContent = '';
+}
+
+function measureUndo(){
+  if(!measureActive() || !measurePoints.length) return;
+  measurePoints.pop();
+  const v = measureVertices.pop();
+  if(v) measureGroup.removeLayer(v);
+  measureRedraw();
+}
+
+map.on('click', (e) => {
+  if(!measureActive()) return;
+  const last = measurePoints[measurePoints.length - 1];
+  if(last && haversineFeet(last.lat, last.lng, e.latlng.lat, e.latlng.lng) < 3) return; // ignore the 2nd click of a double-click
+  measurePoints.push(e.latlng);
+  const v = L.circleMarker(e.latlng, { radius: 4, color: '#221F1A', weight: 2, fillColor: '#EFE9DA', fillOpacity: 1, interactive: false });
+  measureVertices.push(v);
+  measureGroup.addLayer(v);
+  measureRedraw();
+});
+map.on('mousemove', (e) => {
+  if(!measureActive() || !measurePoints.length) return;
+  measureCursor = e.latlng;
+  measureRedraw();
+});
+map.on('dblclick', () => { if(measureActive()) measureFinish(); });
+document.addEventListener('keydown', (e) => { if(e.key === 'Escape' && measureActive()) measureFinish(); });
+
+mEl('m-dist').addEventListener('click', () => measureStart('distance'));
+mEl('m-area').addEventListener('click', () => measureStart('area'));
+mEl('m-undo').addEventListener('click', measureUndo);
+mEl('m-finish').addEventListener('click', measureFinish);
+mEl('m-clear').addEventListener('click', measureClear);
+
+// Clicking these panels should never count as a click on the map underneath them.
+['measure-bar', 'layers'].forEach(id => L.DomEvent.disableClickPropagation(mEl(id)));
+
+map.on('click', async (e) => {
+  if(measureActive()) return; // measuring: clicks place points, not property lookups
+  const { lat, lng } = e.latlng;
+  if(marker) map.removeLayer(marker);
+  marker = L.marker(e.latlng, { icon: pinIcon() }).addTo(map);
+
+  renderLoading(e.latlng);
+
+  const [elevRes, wetlandRes, floodRes, waterwayRes, parcelRes, hydricRes, zoningRes, landcoverRes] = await Promise.allSettled([
+    estimateSlope(lat, lng),
+    queryNWI(lat, lng),
+    queryFlood(lat, lng),
+    queryWaterway(lat, lng),
+    queryParcel(lat, lng),
+    queryHydric(lat, lng),
+    queryZoning(lat, lng),
+    queryLandCover(lat, lng),
+  ]);
+
+  const pack = (r) => r.status === 'fulfilled' ? { ok: true, value: r.value } : { ok: false, error: r.reason.message || 'Service unavailable.' };
+
+  renderReport(e.latlng, {
+    elev: pack(elevRes),
+    wetland: pack(wetlandRes),
+    flood: pack(floodRes),
+    waterway: pack(waterwayRes),
+    parcel: pack(parcelRes),
+    hydric: pack(hydricRes),
+    zoning: pack(zoningRes),
+    landcover: pack(landcoverRes),
+  });
+});
+
+// --- Request Detailed Professional Review modal ---
+const modalOverlay = document.getElementById('modal-overlay');
+const modalPropertyLine = document.getElementById('modal-property-line');
+
+function openRequestModal(prefill){
+  if(prefill){ const ta = document.getElementById('req-message'); if(ta && !ta.value) ta.value = prefill; }
+  if(lastReportContext){
+    const c = lastReportContext;
+    const bits = [`${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}`, `Grade ${c.grade} (${c.totalScore}/100)`];
+    if(c.parcelId) bits.push(`Parcel ${c.parcelId}`);
+    if(c.county) bits.push(c.county);
+    modalPropertyLine.textContent = bits.join(' — ');
+  } else {
+    modalPropertyLine.textContent = 'No property selected — click the map first.';
+  }
+  modalOverlay.classList.add('open');
+}
+function closeRequestModal(){ modalOverlay.classList.remove('open'); }
+
+document.getElementById('modal-cancel').addEventListener('click', closeRequestModal);
+modalOverlay.addEventListener('click', (e) => { if(e.target === modalOverlay) closeRequestModal(); });
+
+document.getElementById('request-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const name = document.getElementById('req-name').value;
+  const email = document.getElementById('req-email').value;
+  const phone = document.getElementById('req-phone').value;
+  const message = document.getElementById('req-message').value;
+  const c = lastReportContext;
+
+  const propertyLine = c
+    ? `${c.lat.toFixed(5)}, ${c.lng.toFixed(5)} — Grade ${c.grade} (${c.totalScore}/100)${c.parcelId ? ' — Parcel ' + c.parcelId : ''}${c.county ? ' — ' + c.county : ''}`
+    : 'No property selected';
+  const flagsLine = c && c.flags.length ? c.flags.join('\n') : 'None';
+
+  const body = [
+    `Name: ${name}`, `Email: ${email}`, `Phone: ${phone || '(none provided)'}`, '',
+    `Property: ${propertyLine}`, `Zoning district(s): ${c && c.zoning && c.zoning.length ? c.zoning.join(', ') : 'not identified'}`, '', `Flags from self-service evaluation:\n${flagsLine}`, '',
+    `Message: ${message || '(none)'}`,
+  ].join('\n');
+
+  // Prototype-only submission path — a real build routes this to an intake system/CRM and,
+  // for the paid tier, a payment flow, rather than opening the user's local email client.
+  const mailto = `mailto:review@dewdiligent.example?subject=${encodeURIComponent('Property Review Request — ' + (c ? c.lat.toFixed(4) + ',' + c.lng.toFixed(4) : 'no coords'))}&body=${encodeURIComponent(body)}`;
+  window.location.href = mailto;
+  closeRequestModal();
+});
+</script>
+</body>
+</html>
