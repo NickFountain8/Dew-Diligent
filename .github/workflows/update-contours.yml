@@ -10,9 +10,14 @@ on:
 permissions:
   contents: write          # lets the job save the new data file into the repo
 
+# Never run two copies at once (they would collide when saving).
+concurrency:
+  group: update-contours
+  cancel-in-progress: false
+
 jobs:
   update-contours:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04   # pinned: GitHub is moving "ubuntu-latest" to Ubuntu 26.04 (Oct 19 - Nov 19, 2026), which can break the GDAL install
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -45,5 +50,22 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/
-          git diff --staged --quiet || git commit -m "Daily contour data update $(date -u +%Y-%m-%d)"
-          git push
+          if git diff --staged --quiet; then
+            echo "No changes to save."
+            exit 0
+          fi
+          git commit -m "Daily contour data update $(date -u +%Y-%m-%d)"
+          # If the repository changed while this job was running (someone edited a file, or another
+          # run saved first), catch up and try again instead of failing. If both changed the same
+          # data file, this run's newly generated version wins.
+          for attempt in 1 2 3; do
+            if git pull --rebase -X theirs origin main && git push origin HEAD:main; then
+              echo "Saved on attempt $attempt."
+              exit 0
+            fi
+            echo "Attempt $attempt did not go through; retrying..."
+            git rebase --abort 2>/dev/null || true
+            sleep 5
+          done
+          echo "Could not save after 3 attempts."
+          exit 1
